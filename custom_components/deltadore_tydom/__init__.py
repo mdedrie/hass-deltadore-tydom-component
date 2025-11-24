@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PIN, Platform
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -56,7 +59,52 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             await tydom_hub.reload_devices()
     
     hass.services.async_register(DOMAIN, "reload_devices", handle_reload_devices)
+    
+    # Register panel and API routes
+    await register_panel(hass)
+    
     return True
+
+
+async def register_panel(hass: HomeAssistant) -> None:
+    """Register the custom panel and API routes."""
+    # Register API views
+    from . import panel
+    from homeassistant.components import http
+    
+    hass.http.register_view(panel.TydomStatusView())
+    hass.http.register_view(panel.TydomDevicesView())
+    hass.http.register_view(panel.TydomConfigView())
+    hass.http.register_view(panel.TydomActionsView())
+    hass.http.register_view(panel.TydomLogsView())
+    hass.http.register_view(panel.TydomInstancesView())
+    hass.http.register_view(panel.TydomPanelView())
+    hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
+    hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
+    
+    # Register panel
+    from homeassistant.components import frontend
+    
+    # Register as a custom panel
+    # Using html_url to load the HTML directly which then loads JS and CSS
+    frontend.async_register_built_in_panel(
+        hass,
+        component_name="custom",
+        sidebar_title="Delta Dore Tydom",
+        sidebar_icon="mdi:home-automation",
+        frontend_url_path="deltadore_tydom",
+        require_admin=True,
+        config={
+            "_panel_custom": {
+                "name": "deltadore-tydom-panel",
+                "embed_iframe": True,
+                "trust_external": False,
+                "html_url": "/api/deltadore_tydom/frontend/panel.html",
+            }
+        },
+    )
+    
+    LOGGER.info("Panneau Delta Dore Tydom enregistré")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

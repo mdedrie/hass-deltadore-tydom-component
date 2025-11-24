@@ -483,5 +483,94 @@
                 "name": "Smoke detector defect"
             }
         }
+    },
+    "panel": {
+        "tabs": {
+            "status": "Status",
+            "devices": "Devices",
+            "config": "Configuration",
+            "actions": "Actions",
+            "logs": "Logs"
+        },
+        "status": {
+            "title": "Integration Status",
+            "connection": "Connection",
+            "host": "Host",
+            "mac": "MAC Address",
+            "mode": "Mode",
+            "refresh_interval": "Refresh Interval",
+            "total_devices": "Total Devices",
+            "total_entities": "HA Entities",
+            "checking": "Checking...",
+            "zones": {
+                "title": "Alarm Zones",
+                "home": "Home",
+                "away": "Away",
+                "night": "Night"
+            },
+            "devices_by_type": "Devices by Type"
+        },
+        "devices": {
+            "title": "Discovered Devices",
+            "search_placeholder": "Search...",
+            "filter_all": "All Types",
+            "table": {
+                "name": "Name",
+                "type": "Type",
+                "device_id": "Device ID",
+                "endpoint": "Endpoint",
+                "actions": "Actions"
+            },
+            "details": {
+                "title": "Device Details"
+            }
+        },
+        "config": {
+            "title": "Configuration",
+            "zones": {
+                "title": "Alarm Zones",
+                "home": "Home Zones",
+                "away": "Away Zones",
+                "night": "Night Zones",
+                "home_placeholder": "Ex: 1,2,4",
+                "away_placeholder": "Ex: 1,2,4",
+                "night_placeholder": "Ex: 1,2,4",
+                "help": "Comma-separated (e.g: 1,2,4)"
+            },
+            "refresh": {
+                "title": "Refresh",
+                "interval": "Interval (minutes)",
+                "help": "Between 1 and 1440 minutes"
+            },
+            "info": {
+                "title": "Information",
+                "host": "Host",
+                "mac": "MAC Address",
+                "mode": "Mode"
+            },
+            "save": "Save",
+            "reset": "Reset"
+        },
+        "actions": {
+            "title": "Actions",
+            "reload_devices": {
+                "title": "Reload Devices",
+                "description": "Removes and recreates all devices and entities",
+                "button": "Reload"
+            },
+            "test_connection": {
+                "title": "Test Connection",
+                "description": "Verifies credentials and connection to hub",
+                "button": "Test"
+            }
+        },
+        "logs": {
+            "title": "Logs",
+            "filter_all": "All Levels",
+            "auto_refresh": "Auto Refresh",
+            "refresh": "Refresh",
+            "clear": "Clear"
+        },
+        "loading": "Loading..."
     }
 }
