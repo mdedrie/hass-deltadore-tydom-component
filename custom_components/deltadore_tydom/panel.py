@@ -516,3 +516,35 @@ class TydomStaticView(HomeAssistantView):
             charset="utf-8",
         )
 
+
+class TydomPanelLoaderView(HomeAssistantView):
+    """View to serve panel-loader.js without authentication.
+    
+    This file is loaded by Home Assistant in the context of an authenticated panel,
+    so it doesn't need its own authentication check.
+    """
+
+    url = "/api/deltadore_tydom/frontend/panel-loader.js"
+    name = "api:deltadore_tydom:panel-loader"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Serve panel-loader.js."""
+        from pathlib import Path
+        
+        frontend_path = Path(__file__).parent / "frontend" / "panel-loader.js"
+        
+        if not frontend_path.exists():
+            return web.Response(
+                text="Panel loader not found", status=404
+            )
+        
+        with open(frontend_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        return web.Response(
+            text=content,
+            content_type="application/javascript",
+            charset="utf-8",
+        )
+

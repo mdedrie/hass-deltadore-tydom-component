@@ -85,7 +85,7 @@ async def register_panel(hass: HomeAssistant) -> None:
     hass.http.register_view(panel.TydomPanelView())
     hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
     hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
-    hass.http.register_view(panel.TydomStaticView("panel-loader.js", "application/javascript"))
+    hass.http.register_view(panel.TydomPanelLoaderView())
     
     # Register panel
     from homeassistant.components import frontend
