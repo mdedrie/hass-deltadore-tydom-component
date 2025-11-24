@@ -44,6 +44,7 @@ from .ha_entities import (
     HASensor,
     HAScene,
     HASwitch,
+    HAReloadButton,
 )
 
 from .const import LOGGER
@@ -116,6 +117,7 @@ class Hub:
         )
 
         self.online = True
+        self._reload_button_created = False
 
     def update_config(self, refresh_interval, zone_home, zone_away, zone_night):
         """Update zone configuration."""
@@ -154,7 +156,7 @@ class Hub:
     def ready(self) -> bool:
         """Check if we're ready to work."""
         # and self.add_alarm_callback is not None
-        return (
+        is_ready = (
             self.add_cover_callback is not None
             and self.add_sensor_callback is not None
             and self.add_climate_callback is not None
@@ -170,6 +172,13 @@ class Hub:
             and self.add_select_callback is not None
             and self.add_event_callback is not None
         )
+        # Créer le bouton de rechargement une fois que les callbacks sont prêts
+        if is_ready and not self._reload_button_created and self.add_button_callback is not None:
+            reload_button = HAReloadButton(self, self._hass)
+            self.add_button_callback([reload_button])
+            self._reload_button_created = True
+            LOGGER.debug("Bouton de rechargement créé")
+        return is_ready
 
     async def setup(self, connection: ClientWebSocketResponse) -> None:
         """Listen to tydom events."""
@@ -223,6 +232,7 @@ class Hub:
                     self.add_update_callback([ha_device])
                 if self.add_sensor_callback is not None:
                     self.add_sensor_callback(ha_device.get_sensors())
+                # Le bouton de rechargement est créé dans ready() pour être toujours présent
             case TydomShutter():
                 LOGGER.debug("Create cover %s", device.device_id)
                 ha_device = HACover(device, self._hass)
@@ -510,6 +520,8 @@ class Hub:
         # Vider les dictionnaires d'appareils
         self.devices.clear()
         self.ha_devices.clear()
+        # Réinitialiser le flag pour recréer le bouton après le rechargement
+        self._reload_button_created = False
         
         # Supprimer toutes les entités existantes via l'Entity Registry
         from homeassistant.helpers import entity_registry as er
@@ -542,5 +554,11 @@ class Hub:
         await self._tydom_client.get_devices_data()
         await self._tydom_client.get_scenarii()
         await self._tydom_client.get_moments()
+        
+        # Recréer le bouton de rechargement après le rechargement
+        if self.add_button_callback is not None:
+            reload_button = HAReloadButton(self, self._hass)
+            self.add_button_callback([reload_button])
+            LOGGER.debug("Bouton de rechargement recréé après le rechargement")
         
         LOGGER.info("Rechargement terminé, les nouveaux appareils seront découverts automatiquement")

@@ -2687,6 +2687,31 @@ class HAButton(ButtonEntity, HAEntity):
             )
 
 
+class HAReloadButton(ButtonEntity):
+    """Button entity for reloading all devices."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:reload"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, hub, hass) -> None:
+        """Initialize HAReloadButton."""
+        self.hass = hass
+        self._hub = hub
+        self._attr_unique_id = f"{hub.hub_id}_reload_devices"
+        self._attr_name = "Recharger les appareils"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, hub.hub_id)},
+            name=hub._name,
+            manufacturer=hub.manufacturer,
+        )
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self._hub.reload_devices()
+
+
 class HANumber(NumberEntity, HAEntity):
     """Representation of a Tydom Number."""
 
