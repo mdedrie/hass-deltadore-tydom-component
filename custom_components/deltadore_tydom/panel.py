@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from aiohttp import web
@@ -461,12 +463,16 @@ class TydomPanelView(HomeAssistantView):
 
     url = "/api/deltadore_tydom/frontend/panel.html"
     name = "api:deltadore_tydom:panel"
-    requires_auth = True
+    requires_auth = False
+
+    @staticmethod
+    def _read_file(path: Path) -> str:
+        """Read file content synchronously (to be run in thread)."""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
     async def get(self, request: web.Request) -> web.Response:
         """Serve panel HTML."""
-        from pathlib import Path
-        
         frontend_path = Path(__file__).parent / "frontend" / "panel.html"
         
         if not frontend_path.exists():
@@ -474,8 +480,7 @@ class TydomPanelView(HomeAssistantView):
                 text="Panel HTML not found", status=404
             )
         
-        with open(frontend_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
+        html_content = await asyncio.to_thread(self._read_file, frontend_path)
         
         return web.Response(
             text=html_content,
@@ -496,10 +501,14 @@ class TydomStaticView(HomeAssistantView):
         self.url = f"/api/deltadore_tydom/frontend/{filename}"
         self.name = f"api:deltadore_tydom:static:{filename}"
 
+    @staticmethod
+    def _read_file(path: Path) -> str:
+        """Read file content synchronously (to be run in thread)."""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
     async def get(self, request: web.Request) -> web.Response:
         """Serve static file."""
-        from pathlib import Path
-        
         frontend_path = Path(__file__).parent / "frontend" / self.filename
         
         if not frontend_path.exists():
@@ -507,8 +516,7 @@ class TydomStaticView(HomeAssistantView):
                 text=f"File {self.filename} not found", status=404
             )
         
-        with open(frontend_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = await asyncio.to_thread(self._read_file, frontend_path)
         
         return web.Response(
             text=content,
@@ -528,10 +536,14 @@ class TydomPanelLoaderView(HomeAssistantView):
     name = "api:deltadore_tydom:panel-loader"
     requires_auth = False
 
+    @staticmethod
+    def _read_file(path: Path) -> str:
+        """Read file content synchronously (to be run in thread)."""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
     async def get(self, request: web.Request) -> web.Response:
         """Serve panel-loader.js."""
-        from pathlib import Path
-        
         frontend_path = Path(__file__).parent / "frontend" / "panel-loader.js"
         
         if not frontend_path.exists():
@@ -539,8 +551,7 @@ class TydomPanelLoaderView(HomeAssistantView):
                 text="Panel loader not found", status=404
             )
         
-        with open(frontend_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = await asyncio.to_thread(self._read_file, frontend_path)
         
         return web.Response(
             text=content,
