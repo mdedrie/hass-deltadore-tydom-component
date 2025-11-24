@@ -121,7 +121,7 @@
             },
             "actions": {
                 "title": "Actions Delta Dore Tydom",
-                "description": "Actions disponibles pour l'intégration Tydom{status}",
+                "description": "Actions disponibles pour l'intégration Tydom{status}\n\nStatut du hub : {hub_status}",
                 "data": {
                     "reload_devices": "Recharger les appareils",
                     "reload_devices_button": "Recharger tous les appareils"

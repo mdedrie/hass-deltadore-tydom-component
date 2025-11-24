@@ -11,11 +11,11 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_EMAIL
+
 from .const import (
     DOMAIN,
     LOGGER,
-    CONF_HOST,
-    CONF_MAC,
     CONF_ZONES_HOME,
     CONF_ZONES_AWAY,
     CONF_ZONES_NIGHT,
@@ -23,7 +23,6 @@ from .const import (
     CONF_CONFIG_MODE,
     CONF_CLOUD_MODE,
     CONF_MANUAL_MODE,
-    CONF_EMAIL,
 )
 from . import hub
 

@@ -120,7 +120,7 @@
             },
             "actions": {
                 "title": "Delta Dore Tydom Actions",
-                "description": "Available actions for Tydom integration{status}",
+                "description": "Available actions for Tydom integration{status}\n\nHub status: {hub_status}",
                 "data": {
                     "reload_devices": "Reload devices",
                     "reload_devices_button": "Reload all devices"

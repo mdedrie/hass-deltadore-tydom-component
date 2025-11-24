@@ -1248,11 +1248,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         _errors = {}
         status_message = ""
         
+        # Vérifier si le hub est disponible
+        hub_available = (
+            DOMAIN in self.hass.data 
+            and self.config_entry.entry_id in self.hass.data[DOMAIN]
+        )
+        
         if user_input is not None:
             # Le champ reload_devices est présent et True si l'utilisateur a activé le bouton
             if user_input.get("reload_devices"):
-                # Appeler directement reload_devices sur le hub
-                if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+                if hub_available:
                     tydom_hub = self.hass.data[DOMAIN][self.config_entry.entry_id]
                     try:
                         await tydom_hub.reload_devices()
@@ -1279,6 +1284,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             errors=_errors,
             description_placeholders={
                 "status": status_message if status_message else "",
+                "hub_status": "disponible" if hub_available else "non disponible - redémarrez Home Assistant",
             },
         )
 
