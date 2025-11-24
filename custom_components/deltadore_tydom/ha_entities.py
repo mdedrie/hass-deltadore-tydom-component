@@ -533,8 +533,10 @@ class BinarySensorBase(BinarySensorEntity):
         # Add name if available
         if hasattr(self._device, "device_name") and self._device.device_name:
             info["name"] = self._device.device_name
-        elif hasattr(self._device, "productName") and self._device.productName:
-            info["name"] = str(self._device.productName)
+        elif hasattr(self._device, "productName"):
+            product_name = getattr(self._device, "productName", None)
+            if product_name is not None:
+                info["name"] = str(product_name)
         else:
             info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
         # Try to get manufacturer and model
