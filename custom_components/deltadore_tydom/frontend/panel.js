@@ -291,7 +291,7 @@
     `).join('');
   }
 
-  window.showDeviceDetails = async function(deviceId) {
+  async function showDeviceDetails(deviceId) {
     try {
       const response = await callAPI('GET', `/api/deltadore_tydom/devices${currentEntryId ? '?entry_id=' + currentEntryId : ''}`);
       const data = await response.json();
@@ -645,5 +645,7 @@
     };
   }
 
+  // Expose functions to global scope for inline handlers
+  window.showDeviceDetails = showDeviceDetails;
 })();
 

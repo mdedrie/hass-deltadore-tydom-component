@@ -100,7 +100,7 @@ async def register_panel(hass: HomeAssistant) -> None:
                 "name": "deltadore-tydom-panel",
                 "embed_iframe": True,
                 "trust_external": False,
-                "html_url": "/api/deltadore_tydom/frontend/panel.html",
+                "url": "/api/deltadore_tydom/frontend/panel.html",
             }
         },
     )
