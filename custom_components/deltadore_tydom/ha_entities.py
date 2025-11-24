@@ -2472,55 +2472,9 @@ class HAScene(Scene, HAEntity):
             "manufacturer": device_info["manufacturer"],
         }
 
-        # If it's a TWC scene, group it under a parent device
-        if self._is_twc_scene():
-            zone = self._get_zone_from_scene()
-            
-            # Option 1 (priority): Tywell Control device
-            tywell_device_id = self._find_tywell_device(zone)
-            if tywell_device_id:
-                info["identifiers"] = {(DOMAIN, tywell_device_id)}
-                # Get Tywell device name
-                hub_instance = self._get_hub()
-                if hub_instance and hasattr(hub_instance, "devices"):
-                    tywell_device = hub_instance.devices.get(tywell_device_id)
-                    if tywell_device:
-                        device_name_attr = getattr(tywell_device, "device_name", None)
-                        if device_name_attr:
-                            info["name"] = device_name_attr
-                        else:
-                            info["name"] = self._get_translated_device_name("tywell_control", zone)
-                    else:
-                        info["name"] = self._get_translated_device_name("tywell_control", zone)
-                else:
-                    info["name"] = self._get_translated_device_name("tywell_control", zone)
-            else:
-                # Option 2: Main Tydom device
-                gateway_device_id = self._get_tydom_gateway_device_id()
-                if gateway_device_id:
-                    info["identifiers"] = {(DOMAIN, gateway_device_id)}
-                    # Get gateway name
-                    hub_instance = self._get_hub()
-                    if hub_instance and hasattr(hub_instance, "devices"):
-                        gateway_device = hub_instance.devices.get(gateway_device_id)
-                        if gateway_device:
-                            info["name"] = getattr(gateway_device, "device_name", "Tydom Gateway")
-                        else:
-                            info["name"] = "Tydom Gateway"
-                    else:
-                        info["name"] = "Tydom Gateway"
-                else:
-                    # Option 3: Dedicated scenes device
-                    if zone:
-                        info["identifiers"] = {(DOMAIN, f"tydom_scenes_{zone.lower()}")}
-                        info["name"] = self._get_translated_device_name("tydom_scenes", zone)
-                    else:
-                        info["identifiers"] = {(DOMAIN, "tydom_scenes")}
-                        info["name"] = self._get_translated_device_name("tydom_scenes", None)
-        else:
-            # Non-TWC scene: current behavior (individual device)
-            info["identifiers"] = {(DOMAIN, self._device.device_id)}
-            info["name"] = self._device.device_name
+        # All scenes (TWC and non-TWC) are grouped under a dedicated "Scènes Tydom" device
+        info["identifiers"] = {(DOMAIN, "tydom_scenes")}
+        info["name"] = self._get_translated_device_name("tydom_scenes", None)
 
         if "model" in device_info:
             info["model"] = device_info["model"]
