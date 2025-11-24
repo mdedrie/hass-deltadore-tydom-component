@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+from typing import Any
+
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PIN, Platform
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -15,6 +19,7 @@ from .const import (
     CONF_ZONES_AWAY,
     CONF_ZONES_NIGHT,
     CONF_REFRESH_INTERVAL,
+    LOGGER,
 )
 
 # List of platforms to support. There should be a matching .py file for each,
@@ -37,6 +42,70 @@ PLATFORMS: list[str] = [
     Platform.SELECT,
     Platform.EVENT,
 ]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Delta Dore Tydom integration."""
+    # Enregistrer le service de rechargement une seule fois
+    async def handle_reload_devices(call):
+        """Handle reload_devices service call."""
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.warning("Aucune entrée de configuration Tydom trouvée")
+            return
+        
+        # Recharger toutes les entrées configurées
+        LOGGER.info("Démarrage du rechargement de tous les appareils Tydom")
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            LOGGER.info("Rechargement de l'entrée de configuration: %s", entry_id)
+            await tydom_hub.reload_devices()
+    
+    hass.services.async_register(DOMAIN, "reload_devices", handle_reload_devices)
+    
+    # Register panel and API routes
+    await register_panel(hass)
+    
+    return True
+
+
+async def register_panel(hass: HomeAssistant) -> None:
+    """Register the custom panel and API routes."""
+    # Register API views
+    from . import panel
+    from homeassistant.components import http
+    
+    hass.http.register_view(panel.TydomStatusView())
+    hass.http.register_view(panel.TydomDevicesView())
+    hass.http.register_view(panel.TydomConfigView())
+    hass.http.register_view(panel.TydomActionsView())
+    hass.http.register_view(panel.TydomLogsView())
+    hass.http.register_view(panel.TydomInstancesView())
+    hass.http.register_view(panel.TydomPanelView())
+    hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
+    hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
+    
+    # Register panel
+    from homeassistant.components import frontend
+    
+    # Register as a custom panel accessible from sidebar
+    # Also accessible via URL: /deltadore_tydom
+    frontend.async_register_built_in_panel(
+        hass,
+        component_name="custom",
+        sidebar_title="Delta Dore Tydom",
+        sidebar_icon="mdi:home-automation",
+        frontend_url_path="deltadore_tydom",
+        require_admin=True,
+        config={
+            "_panel_custom": {
+                "name": "deltadore-tydom-panel",
+                "embed_iframe": True,
+                "trust_external": False,
+                "html_url": "/api/deltadore_tydom/frontend/panel.html",
+            }
+        },
+    )
+    
+    LOGGER.info("Panneau Delta Dore Tydom enregistré")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

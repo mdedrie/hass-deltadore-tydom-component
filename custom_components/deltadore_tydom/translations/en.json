@@ -105,6 +105,10 @@
     "options": {
         "step": {
             "init": {
+                "title": "Delta Dore Tydom Options",
+                "description": "Choose an option"
+            },
+            "configure": {
                 "title": "Delta Dore Tydom Configuration",
                 "description": "Update your Tydom integration settings. If you need help, visit: https://github.com/CyrilP/hass-deltadore-tydom-component",
                 "data": {
@@ -113,11 +117,36 @@
                     "zones_home": "Active zones in home alarm mode (comma-separated, e.g., 1,2,4)",
                     "zones_night": "Active zones in night alarm mode (comma-separated, e.g., 1,2,4)"
                 }
+            },
+            "actions": {
+                "title": "Delta Dore Tydom Actions",
+                "description": "Available actions for Tydom integration{status}",
+                "data": {
+                    "reload_devices": "Reload devices",
+                    "reload_devices_button": "Reload all devices"
+                },
+                "description_placeholders": {
+                    "status": "",
+                    "reload_success": "\n\n✓ Reload successful! Devices will be rediscovered automatically.",
+                    "reload_error": "\n\n✗ Error during reload. Check logs for more details.",
+                    "hub_not_found": "\n\n✗ Tydom hub not found. Verify that the integration is properly configured."
+                }
+            },
+            "panel": {
+                "title": "Management Panel",
+                "description": "Access the complete management panel for Delta Dore Tydom integration.\n\nThe panel is accessible via the sidebar menu or directly at:\n{panel_url}\n\nYou can also click on the link in the sidebar menu \"Delta Dore Tydom\"."
             }
+        },
+        "menu_options": {
+            "configure": "Configure",
+            "actions": "Actions",
+            "panel": "Management Panel"
         },
         "error": {
             "invalid_refresh_interval": "Refresh interval is not valid",
-            "invalid_zone_config": "Zone configuration is invalid. syntax is : zone_id_1,zone_id_2... Example: 1,2,4"
+            "invalid_zone_config": "Zone configuration is invalid. syntax is : zone_id_1,zone_id_2... Example: 1,2,4",
+            "reload_error": "Error reloading devices",
+            "hub_not_found": "Tydom hub not found"
         }
     },
     "selector": {
@@ -148,6 +177,10 @@
                     "description": "Alarm event type"
                 }
             }
+        },
+        "reload_devices": {
+            "name": "Reload devices",
+            "description": "Reload all devices and entities as at initial startup. This action removes all existing entities and recreates them from scratch."
         }
     },
     "entity": {
@@ -172,22 +205,188 @@
                 "affected_endpoints": {
                     "name": "Affected endpoints"
                 }
+            },
+            "zone": {
+                "day": {
+                    "name": "Day"
+                },
+                "night": {
+                    "name": "Night"
+                }
+            },
+            "device": {
+                "tywell_control": {
+                    "name": "Tywell Control"
+                },
+                "tydom_scenes": {
+                    "name": "Tydom Scenes"
+                }
             }
         },
         "switch": {
-            "name": "Switch"
+            "name": "Switch",
+            "state_attributes": {
+                "level": {
+                    "name": "Level"
+                }
+            }
         },
         "button": {
-            "name": "Button"
+            "name": "Button",
+            "state_attributes": {
+                "action_name": {
+                    "name": "Action name"
+                }
+            }
         },
         "number": {
-            "name": "Number"
+            "name": "Number",
+            "state_attributes": {
+                "value": {
+                    "name": "Value"
+                },
+                "min": {
+                    "name": "Minimum"
+                },
+                "max": {
+                    "name": "Maximum"
+                },
+                "step": {
+                    "name": "Step"
+                }
+            }
         },
         "select": {
-            "name": "Select"
+            "name": "Select",
+            "state_attributes": {
+                "options": {
+                    "name": "Available options"
+                },
+                "current_option": {
+                    "name": "Current option"
+                }
+            }
         },
         "event": {
-            "name": "Event"
+            "name": "Event",
+            "state_attributes": {
+                "event_type": {
+                    "name": "Event type"
+                },
+                "event_data": {
+                    "name": "Event data"
+                }
+            }
+        },
+        "cover": {
+            "name": "Cover",
+            "state_attributes": {
+                "position": {
+                    "name": "Position"
+                },
+                "tilt_position": {
+                    "name": "Tilt position"
+                },
+                "current_position": {
+                    "name": "Current position"
+                }
+            }
+        },
+        "light": {
+            "name": "Light",
+            "state_attributes": {
+                "brightness": {
+                    "name": "Brightness"
+                },
+                "color_mode": {
+                    "name": "Color mode"
+                },
+                "supported_color_modes": {
+                    "name": "Supported color modes"
+                }
+            }
+        },
+        "climate": {
+            "name": "Climate",
+            "state_attributes": {
+                "temperature": {
+                    "name": "Temperature"
+                },
+                "target_temperature": {
+                    "name": "Target temperature"
+                },
+                "hvac_mode": {
+                    "name": "HVAC mode"
+                },
+                "preset_mode": {
+                    "name": "Preset mode"
+                },
+                "current_temperature": {
+                    "name": "Current temperature"
+                }
+            }
+        },
+        "alarm_control_panel": {
+            "name": "Alarm Control Panel",
+            "state_attributes": {
+                "changed_by": {
+                    "name": "Changed by"
+                },
+                "code_arm_required": {
+                    "name": "Code required to arm"
+                },
+                "code_format": {
+                    "name": "Code format"
+                }
+            }
+        },
+        "lock": {
+            "name": "Lock",
+            "state_attributes": {
+                "lock_state": {
+                    "name": "Lock state"
+                },
+                "battery_level": {
+                    "name": "Battery level"
+                }
+            }
+        },
+        "weather": {
+            "name": "Weather",
+            "state_attributes": {
+                "temperature": {
+                    "name": "Temperature"
+                },
+                "humidity": {
+                    "name": "Humidity"
+                },
+                "pressure": {
+                    "name": "Pressure"
+                },
+                "wind_speed": {
+                    "name": "Wind speed"
+                },
+                "wind_bearing": {
+                    "name": "Wind bearing"
+                }
+            }
+        },
+        "update": {
+            "name": "Update",
+            "state_attributes": {
+                "installed_version": {
+                    "name": "Installed version"
+                },
+                "latest_version": {
+                    "name": "Latest version"
+                },
+                "release_summary": {
+                    "name": "Release summary"
+                },
+                "release_url": {
+                    "name": "Release URL"
+                }
+            }
         },
         "sensor": {
             "temperature": {
@@ -269,7 +468,114 @@
             },
             "update_available": {
                 "name": "Update available"
+            },
+            "batt_defect": {
+                "name": "Battery defect"
+            },
+            "up_defect": {
+                "name": "Up defect"
+            },
+            "down_defect": {
+                "name": "Down defect"
+            },
+            "obstacle_defect": {
+                "name": "Obstacle defect"
+            },
+            "intrusion": {
+                "name": "Intrusion"
+            },
+            "techsmokedefect": {
+                "name": "Smoke detector defect"
             }
         }
+    },
+    "panel": {
+        "tabs": {
+            "status": "Status",
+            "devices": "Devices",
+            "config": "Configuration",
+            "actions": "Actions",
+            "logs": "Logs"
+        },
+        "status": {
+            "title": "Integration Status",
+            "connection": "Connection",
+            "host": "Host",
+            "mac": "MAC Address",
+            "mode": "Mode",
+            "refresh_interval": "Refresh Interval",
+            "total_devices": "Total Devices",
+            "total_entities": "HA Entities",
+            "checking": "Checking...",
+            "zones": {
+                "title": "Alarm Zones",
+                "home": "Home",
+                "away": "Away",
+                "night": "Night"
+            },
+            "devices_by_type": "Devices by Type"
+        },
+        "devices": {
+            "title": "Discovered Devices",
+            "search_placeholder": "Search...",
+            "filter_all": "All Types",
+            "table": {
+                "name": "Name",
+                "type": "Type",
+                "device_id": "Device ID",
+                "endpoint": "Endpoint",
+                "actions": "Actions"
+            },
+            "details": {
+                "title": "Device Details"
+            }
+        },
+        "config": {
+            "title": "Configuration",
+            "zones": {
+                "title": "Alarm Zones",
+                "home": "Home Zones",
+                "away": "Away Zones",
+                "night": "Night Zones",
+                "home_placeholder": "Ex: 1,2,4",
+                "away_placeholder": "Ex: 1,2,4",
+                "night_placeholder": "Ex: 1,2,4",
+                "help": "Comma-separated (e.g: 1,2,4)"
+            },
+            "refresh": {
+                "title": "Refresh",
+                "interval": "Interval (minutes)",
+                "help": "Between 1 and 1440 minutes"
+            },
+            "info": {
+                "title": "Information",
+                "host": "Host",
+                "mac": "MAC Address",
+                "mode": "Mode"
+            },
+            "save": "Save",
+            "reset": "Reset"
+        },
+        "actions": {
+            "title": "Actions",
+            "reload_devices": {
+                "title": "Reload Devices",
+                "description": "Removes and recreates all devices and entities",
+                "button": "Reload"
+            },
+            "test_connection": {
+                "title": "Test Connection",
+                "description": "Verifies credentials and connection to hub",
+                "button": "Test"
+            }
+        },
+        "logs": {
+            "title": "Logs",
+            "filter_all": "All Levels",
+            "auto_refresh": "Auto Refresh",
+            "refresh": "Refresh",
+            "clear": "Clear"
+        },
+        "loading": "Loading..."
     }
 }
