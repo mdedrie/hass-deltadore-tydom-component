@@ -82,6 +82,7 @@ async def register_panel(hass: HomeAssistant) -> None:
     hass.http.register_view(panel.TydomPanelView())
     hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
     hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
+    hass.http.register_view(panel.TydomStaticView("panel-loader.js", "application/javascript"))
     
     # Register panel
     from homeassistant.components import frontend
@@ -100,7 +101,7 @@ async def register_panel(hass: HomeAssistant) -> None:
                 "name": "deltadore-tydom-panel",
                 "embed_iframe": True,
                 "trust_external": False,
-                "url": "/api/deltadore_tydom/frontend/panel.html",
+                "js_url": "/api/deltadore_tydom/frontend/panel-loader.js",
             }
         },
     )

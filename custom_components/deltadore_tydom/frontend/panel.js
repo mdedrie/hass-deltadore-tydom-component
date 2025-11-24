@@ -9,6 +9,17 @@
   let refreshIntervals = {};
   let translations = {};
 
+  // Listen for hass updates from parent window (if in iframe)
+  window.addEventListener('message', function(event) {
+    // Accept messages from same origin or parent window
+    if (event.data && event.data.type === 'hass' && event.data.hass) {
+      hass = event.data.hass;
+      if (!currentEntryId) {
+        initPanel();
+      }
+    }
+  });
+
   // Initialize panel when Home Assistant is ready
   // Home Assistant panels receive hass object via window.hassConnection or custom panel API
   window.addEventListener('load', function() {
