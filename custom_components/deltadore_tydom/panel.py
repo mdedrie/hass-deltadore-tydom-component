@@ -490,9 +490,13 @@ class TydomPanelView(HomeAssistantView):
 
 
 class TydomStaticView(HomeAssistantView):
-    """View to serve static files."""
+    """View to serve static files.
+    
+    These files are loaded from panel.html in an iframe, so they don't need
+    authentication as they're already in an authenticated panel context.
+    """
 
-    requires_auth = True
+    requires_auth = False
 
     def __init__(self, filename: str, content_type: str):
         """Initialize static view."""
