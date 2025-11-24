@@ -1090,11 +1090,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         
         return self.async_show_menu(
             step_id="init",
-            menu_options={
-                "configure": "Configurer",
-                "actions": "Actions",
-                "panel": "Panneau de gestion",
-            },
+            menu_options=["configure", "actions", "panel"],
         )
 
     async def async_step_configure(self, user_input: dict[str, Any] | None = None):
