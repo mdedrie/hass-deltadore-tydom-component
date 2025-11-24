@@ -1277,7 +1277,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 }
             ),
             errors=_errors,
-            description_placeholders={"status": status_message},
+            description_placeholders={
+                "status": status_message if status_message else "",
+            },
         )
 
 
