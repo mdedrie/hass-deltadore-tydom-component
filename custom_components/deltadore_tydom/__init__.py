@@ -62,7 +62,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(DOMAIN, "reload_devices", handle_reload_devices)
     
     # Register panel and API routes
-    await register_panel(hass)
+    try:
+        await register_panel(hass)
+    except Exception as e:
+        LOGGER.error("Erreur lors de l'enregistrement du panneau: %s", e, exc_info=True)
     
     return True
 
@@ -89,6 +92,15 @@ async def register_panel(hass: HomeAssistant) -> None:
     
     # Register as a custom panel accessible from sidebar
     # Also accessible via URL: /deltadore_tydom
+    panel_config = {
+        "_panel_custom": {
+            "name": "deltadore-tydom-panel",
+            "embed_iframe": True,
+            "trust_external": False,
+            "js_url": "/api/deltadore_tydom/frontend/panel-loader.js",
+        }
+    }
+    
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -96,17 +108,11 @@ async def register_panel(hass: HomeAssistant) -> None:
         sidebar_icon="mdi:home-automation",
         frontend_url_path="deltadore_tydom",
         require_admin=True,
-        config={
-            "_panel_custom": {
-                "name": "deltadore-tydom-panel",
-                "embed_iframe": True,
-                "trust_external": False,
-                "js_url": "/api/deltadore_tydom/frontend/panel-loader.js",
-            }
-        },
+        config=panel_config,
     )
     
-    LOGGER.info("Panneau Delta Dore Tydom enregistré")
+    LOGGER.info("Panneau Delta Dore Tydom enregistré avec succès")
+    LOGGER.debug("Configuration du panneau: js_url=%s", panel_config.get("_panel_custom", {}).get("js_url", "N/A"))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
