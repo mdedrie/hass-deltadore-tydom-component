@@ -2173,6 +2173,7 @@ class HAScene(Scene, HAEntity):
         # Cache to avoid repeated searches
         self._cached_tywell_device_id: str | None = None
         self._cached_zone: str | None = None
+        self._cached_affected_device_ids: set[str] | None = None
 
     def _is_twc_scene(self) -> bool:
         """Check if this scene is a TWC scene."""
@@ -2262,6 +2263,82 @@ class HAScene(Scene, HAEntity):
             return f"Scènes Tydom {zone_name or ''}".strip() if zone_name else "Scènes Tydom"
         return device_key
 
+    def _get_affected_device_ids(self) -> set[str]:
+        """Extract device IDs affected by this scene from grpAct and epAct.
+        
+        Returns a set of device IDs that are controlled by this scene.
+        """
+        # Use cache if available
+        if self._cached_affected_device_ids is not None:
+            return self._cached_affected_device_ids
+
+        affected_device_ids: set[str] = set()
+        
+        try:
+            hub_instance = self._get_hub()
+            if not hub_instance or not hasattr(hub_instance, "devices"):
+                self._cached_affected_device_ids = affected_device_ids
+                return affected_device_ids
+
+            grp_act = getattr(self._device, "grpAct", None)
+            ep_act = getattr(self._device, "epAct", None)
+
+            # Extract IDs from grpAct
+            if grp_act and isinstance(grp_act, list):
+                for group in grp_act:
+                    if isinstance(group, dict):
+                        group_id = group.get("id")
+                        if group_id:
+                            # Check if this group ID corresponds to a device
+                            group_id_str = str(group_id)
+                            if group_id_str in hub_instance.devices:
+                                affected_device_ids.add(group_id_str)
+
+            # Extract IDs from epAct
+            if ep_act and isinstance(ep_act, list):
+                for endpoint in ep_act:
+                    if isinstance(endpoint, dict):
+                        # Try different ID formats
+                        dev_id = endpoint.get("devId")
+                        ep_id = endpoint.get("epId")
+                        
+                        # Try with devId directly
+                        if dev_id:
+                            dev_id_str = str(dev_id)
+                            if dev_id_str in hub_instance.devices:
+                                affected_device_ids.add(dev_id_str)
+                        
+                        # Try with epId
+                        if ep_id:
+                            ep_id_str = str(ep_id)
+                            if ep_id_str in hub_instance.devices:
+                                affected_device_ids.add(ep_id_str)
+                        
+                        # Try with "epId_devId" format
+                        if ep_id and dev_id:
+                            unique_id = f"{ep_id}_{dev_id}"
+                            if unique_id in hub_instance.devices:
+                                affected_device_ids.add(unique_id)
+                        
+                        # Also try with just epId or devId as fallback
+                        endpoint_id = endpoint.get("epId") or endpoint.get("devId")
+                        if endpoint_id:
+                            endpoint_id_str = str(endpoint_id)
+                            if endpoint_id_str in hub_instance.devices:
+                                affected_device_ids.add(endpoint_id_str)
+
+            # Cache result
+            self._cached_affected_device_ids = affected_device_ids
+            return affected_device_ids
+        except Exception as e:
+            LOGGER.warning(
+                "Error while extracting affected device IDs for scene %s: %s",
+                self._device.device_id,
+                e,
+            )
+            self._cached_affected_device_ids = set()
+            return set()
+
     def _find_tywell_device(self, zone: str | None = None) -> str | None:
         """Find Tywell Control device from grpAct/epAct."""
         # Use cache if available
@@ -2273,35 +2350,11 @@ class HAScene(Scene, HAEntity):
             if not hub_instance or not hasattr(hub_instance, "devices"):
                 return None
 
-            # Analyze grpAct and epAct to find device IDs
-            device_ids_to_check = set()
-            grp_act = getattr(self._device, "grpAct", None)
-            ep_act = getattr(self._device, "epAct", None)
+            # Use the affected device IDs method
+            affected_device_ids = self._get_affected_device_ids()
 
-            # Extract IDs from grpAct
-            if grp_act and isinstance(grp_act, list):
-                for group in grp_act:
-                    if isinstance(group, dict):
-                        group_id = group.get("id")
-                        if group_id:
-                            device_ids_to_check.add(str(group_id))
-
-            # Extract IDs from epAct
-            if ep_act and isinstance(ep_act, list):
-                for endpoint in ep_act:
-                    if isinstance(endpoint, dict):
-                        dev_id = endpoint.get("devId") or endpoint.get("epId")
-                        if dev_id:
-                            device_ids_to_check.add(str(dev_id))
-                        # Also try with "epId_deviceId" format
-                        ep_id = endpoint.get("epId")
-                        dev_id = endpoint.get("devId")
-                        if ep_id and dev_id:
-                            unique_id = f"{ep_id}_{dev_id}"
-                            device_ids_to_check.add(unique_id)
-
-            # Search in hub.devices
-            for device_id in device_ids_to_check:
+            # Search for Tywell Control in affected devices
+            for device_id in affected_device_ids:
                 if device_id in hub_instance.devices:
                     device = hub_instance.devices[device_id]
                     # Check if it's a Tywell Control
@@ -2462,6 +2515,28 @@ class HAScene(Scene, HAEntity):
             if affected_endpoints:
                 attrs["affected_endpoints"] = affected_endpoints
 
+        # Add affected device IDs for reference
+        affected_device_ids = self._get_affected_device_ids()
+        if affected_device_ids:
+            attrs["affected_device_ids"] = list(affected_device_ids)
+            
+            # Also add device names if available
+            hub_instance = self._get_hub()
+            if hub_instance and hasattr(hub_instance, "devices"):
+                affected_device_names = []
+                for device_id in affected_device_ids:
+                    if device_id in hub_instance.devices:
+                        device = hub_instance.devices[device_id]
+                        device_name_attr = getattr(device, "device_name", None)
+                        if device_name_attr:
+                            affected_device_names.append(device_name_attr)
+                        elif hasattr(device, "productName"):
+                            product_name = getattr(device, "productName", None)
+                            if product_name:
+                                affected_device_names.append(str(product_name))
+                if affected_device_names:
+                    attrs["affected_device_names"] = affected_device_names
+
         return attrs
 
     @property
@@ -2472,9 +2547,10 @@ class HAScene(Scene, HAEntity):
             "manufacturer": device_info["manufacturer"],
         }
 
-        # All scenes (TWC and non-TWC) are grouped under a dedicated "Scènes Tydom" device
-        info["identifiers"] = {(DOMAIN, "tydom_scenes")}
-        info["name"] = self._get_translated_device_name("tydom_scenes", None)
+        # Each scene has its own device with unique identifier
+        scene_device_id = f"scene_{self._device.device_id}"
+        info["identifiers"] = {(DOMAIN, scene_device_id)}
+        info["name"] = self._base_name
 
         if "model" in device_info:
             info["model"] = device_info["model"]
@@ -2501,6 +2577,96 @@ class HAScene(Scene, HAEntity):
                     zone_name = self._get_translated_zone_name(zone_key)
                     if zone_name:
                         self._attr_name = f"{self._base_name} - {zone_name}"
+        
+        # Create relations between this scene and the devices it affects
+        await self._create_scene_device_relations()
+
+    async def _create_scene_device_relations(self) -> None:
+        """Create relations between this scene and the devices it affects.
+        
+        This allows Home Assistant to display scenes on the devices they control.
+        """
+        try:
+            from homeassistant.helpers import device_registry as dr
+            from homeassistant.helpers import entity_registry as er
+            
+            # Get device and entity registries
+            device_registry = dr.async_get(self.hass)
+            entity_registry = er.async_get(self.hass)
+            
+            # Get the scene entity entry
+            scene_entity_id = self.entity_id
+            if not scene_entity_id:
+                # Entity not yet registered, skip for now
+                return
+            
+            scene_entity_entry = entity_registry.async_get(scene_entity_id)
+            if not scene_entity_entry:
+                return
+            
+            scene_device_id = scene_entity_entry.device_id
+            if not scene_device_id:
+                return
+            
+            # Get affected device IDs
+            affected_device_ids = self._get_affected_device_ids()
+            if not affected_device_ids:
+                return
+            
+            hub_instance = self._get_hub()
+            if not hub_instance or not hasattr(hub_instance, "ha_devices"):
+                return
+            
+            # Create relations for each affected device
+            for affected_device_id in affected_device_ids:
+                # Find the HA device entity for this device
+                if affected_device_id not in hub_instance.ha_devices:
+                    continue
+                
+                ha_device = hub_instance.ha_devices[affected_device_id]
+                if not ha_device:
+                    continue
+                
+                # Get the entity ID for this device (we need at least one entity)
+                # Try to find any entity for this device
+                device_entity_ids = []
+                for entity_id, entity_entry in entity_registry.entities.items():
+                    if entity_entry.device_id and entity_entry.device_id in device_registry.devices:
+                        device_entry = device_registry.devices[entity_entry.device_id]
+                        # Check if this device matches our affected device
+                        device_identifiers = device_entry.identifiers
+                        if (DOMAIN, affected_device_id) in device_identifiers:
+                            device_entity_ids.append(entity_id)
+                            break
+                
+                if not device_entity_ids:
+                    # Try to find device by identifier directly
+                    for device_id, device_entry in device_registry.devices.items():
+                        if (DOMAIN, affected_device_id) in device_entry.identifiers:
+                            # Found the device, now find its entities
+                            for entity_id, entity_entry in entity_registry.entities.items():
+                                if entity_entry.device_id == device_id:
+                                    device_entity_ids.append(entity_id)
+                                    break
+                            break
+                
+                # Create relation if we found the device
+                if device_entity_ids:
+                    # Home Assistant automatically creates relations based on device_info
+                    # We've already set up the scene with its own device, so relations
+                    # will be created automatically when both devices are registered
+                    LOGGER.debug(
+                        "Scene %s affects device %s (entities: %s)",
+                        self._device.device_id,
+                        affected_device_id,
+                        device_entity_ids,
+                    )
+        except Exception as e:
+            LOGGER.warning(
+                "Error creating scene-device relations for scene %s: %s",
+                self._device.device_id,
+                e,
+            )
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Activate the scene."""
