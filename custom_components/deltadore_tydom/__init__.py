@@ -83,8 +83,10 @@ async def register_panel(hass: HomeAssistant) -> None:
     hass.http.register_view(panel.TydomLogsView())
     hass.http.register_view(panel.TydomInstancesView())
     hass.http.register_view(panel.TydomPanelView())
+    hass.http.register_view(panel.TydomLovelacePanelView())
     hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
     hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
+    hass.http.register_view(panel.TydomStaticView("tydom-panel.js", "application/javascript"))
     hass.http.register_view(panel.TydomPanelLoaderView())
     
     # Register panel
@@ -92,12 +94,13 @@ async def register_panel(hass: HomeAssistant) -> None:
     
     # Register as a custom panel accessible from sidebar
     # Also accessible via URL: /deltadore_tydom
+    # Using Lovelace native panel with Lit Element
     panel_config = {
         "_panel_custom": {
             "name": "deltadore-tydom-panel",
-            "embed_iframe": True,
+            "embed_iframe": False,
             "trust_external": False,
-            "js_url": "/api/deltadore_tydom/frontend/panel-loader.js",
+            "js_url": "/api/deltadore_tydom/frontend/tydom-panel.js",
         }
     }
     

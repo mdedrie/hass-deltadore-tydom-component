@@ -56,10 +56,8 @@ def get_all_instances(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
     if DOMAIN not in hass.data:
         return instances
     
-    from homeassistant.config_entries import async_get as async_get_config_entries
-    
     for entry_id, tydom_hub in hass.data[DOMAIN].items():
-        entry = async_get_config_entries(hass).get(entry_id)
+        entry = hass.config_entries.async_get_entry(entry_id)
         if entry:
             instances[entry_id] = {
                 "entry_id": entry_id,
@@ -101,8 +99,7 @@ class TydomStatusView(HomeAssistantView):
             devices_by_type[device_type] = devices_by_type.get(device_type, 0) + 1
         
         # Get entry for additional info
-        from homeassistant.config_entries import async_get as async_get_config_entries
-        entry = async_get_config_entries(hass).get(entry_id)
+        entry = hass.config_entries.async_get_entry(entry_id)
         
         config_mode = CONF_MANUAL_MODE
         if entry and CONF_EMAIL in entry.data and entry.data[CONF_EMAIL]:
@@ -216,8 +213,7 @@ class TydomConfigView(HomeAssistantView):
         
         tydom_hub, entry_id = hub_instance
         
-        from homeassistant.config_entries import async_get as async_get_config_entries
-        entry = async_get_config_entries(hass).get(entry_id)
+        entry = hass.config_entries.async_get_entry(entry_id)
         
         if not entry:
             return self.json_message(
@@ -260,8 +256,7 @@ class TydomConfigView(HomeAssistantView):
                 "entry_id is required", status_code=400
             )
         
-        from homeassistant.config_entries import async_get as async_get_config_entries
-        entry = async_get_config_entries(hass).get(entry_id)
+        entry = hass.config_entries.async_get_entry(entry_id)
         
         if not entry:
             return self.json_message(
@@ -407,7 +402,8 @@ class TydomLogsView(HomeAssistantView):
         for handler in logger.handlers:
             if hasattr(handler, "buffer"):
                 # This is likely a memory handler
-                for record in handler.buffer:
+                buffer = getattr(handler, "buffer", [])
+                for record in buffer:
                     # Apply level filter
                     if level_filter and record.levelname != level_filter:
                         continue
@@ -474,6 +470,37 @@ class TydomPanelView(HomeAssistantView):
     async def get(self, request: web.Request) -> web.Response:
         """Serve panel HTML."""
         frontend_path = Path(__file__).parent / "frontend" / "panel.html"
+        
+        if not frontend_path.exists():
+            return web.Response(
+                text="Panel HTML not found", status=404
+            )
+        
+        html_content = await asyncio.to_thread(self._read_file, frontend_path)
+        
+        return web.Response(
+            text=html_content,
+            content_type="text/html",
+            charset="utf-8",
+        )
+
+
+class TydomLovelacePanelView(HomeAssistantView):
+    """View to serve the Lovelace native panel HTML."""
+
+    url = "/api/deltadore_tydom/frontend/tydom-panel.html"
+    name = "api:deltadore_tydom:lovelace-panel"
+    requires_auth = False
+
+    @staticmethod
+    def _read_file(path: Path) -> str:
+        """Read file content synchronously (to be run in thread)."""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Serve panel HTML."""
+        frontend_path = Path(__file__).parent / "frontend" / "tydom-panel.html"
         
         if not frontend_path.exists():
             return web.Response(
