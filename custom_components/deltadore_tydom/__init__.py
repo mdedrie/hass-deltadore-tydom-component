@@ -15,6 +15,7 @@ from .const import (
     CONF_ZONES_AWAY,
     CONF_ZONES_NIGHT,
     CONF_REFRESH_INTERVAL,
+    LOGGER,
 )
 
 # List of platforms to support. There should be a matching .py file for each,
@@ -37,6 +38,25 @@ PLATFORMS: list[str] = [
     Platform.SELECT,
     Platform.EVENT,
 ]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Delta Dore Tydom integration."""
+    # Enregistrer le service de rechargement une seule fois
+    async def handle_reload_devices(call):
+        """Handle reload_devices service call."""
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.warning("Aucune entrée de configuration Tydom trouvée")
+            return
+        
+        # Recharger toutes les entrées configurées
+        LOGGER.info("Démarrage du rechargement de tous les appareils Tydom")
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            LOGGER.info("Rechargement de l'entrée de configuration: %s", entry_id)
+            await tydom_hub.reload_devices()
+    
+    hass.services.async_register(DOMAIN, "reload_devices", handle_reload_devices)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

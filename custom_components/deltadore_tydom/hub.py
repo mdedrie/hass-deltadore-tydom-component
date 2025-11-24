@@ -499,3 +499,48 @@ class Hub:
                 await asyncio.sleep(self._refresh_interval)
             else:
                 await asyncio.sleep(60)
+
+    async def reload_devices(self) -> None:
+        """Recharger tous les appareils et entités comme au démarrage initial.
+        
+        Cette méthode vide tous les appareils existants et les recharges depuis zéro.
+        """
+        LOGGER.info("Début du rechargement de tous les appareils")
+        
+        # Vider les dictionnaires d'appareils
+        self.devices.clear()
+        self.ha_devices.clear()
+        
+        # Supprimer toutes les entités existantes via l'Entity Registry
+        from homeassistant.helpers import entity_registry as er
+        
+        entity_registry = er.async_get(self._hass)
+        entities_to_remove = []
+        
+        # Parcourir toutes les entités enregistrées pour cette intégration
+        for entity_id, entity_entry in entity_registry.entities.items():
+            if entity_entry.config_entry_id == self._entry.entry_id:
+                entities_to_remove.append(entity_id)
+        
+        # Supprimer les entités
+        for entity_id in entities_to_remove:
+            entity_registry.async_remove(entity_id)
+        
+        LOGGER.info(
+            "Suppression de %d entité(s) existante(s) et rechargement des appareils",
+            len(entities_to_remove)
+        )
+        
+        # Recharger toutes les métadonnées et données comme au démarrage
+        await self._tydom_client.get_info()
+        await self._tydom_client.put_api_mode()
+        await self._tydom_client.get_groups()
+        await self._tydom_client.post_refresh()
+        await self._tydom_client.get_configs_file()
+        await self._tydom_client.get_devices_meta()
+        await self._tydom_client.get_devices_cmeta()
+        await self._tydom_client.get_devices_data()
+        await self._tydom_client.get_scenarii()
+        await self._tydom_client.get_moments()
+        
+        LOGGER.info("Rechargement terminé, les nouveaux appareils seront découverts automatiquement")

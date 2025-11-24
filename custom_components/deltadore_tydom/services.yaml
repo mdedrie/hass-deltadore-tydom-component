@@ -37,3 +37,8 @@ get_events:
               value: ON_OFF
             - label: All alarm events
               value: EVENTS
+reload_devices:
+  name: Reload devices
+  description: Recharger tous les appareils et entités comme au démarrage initial. Cette action supprime toutes les entités existantes et les recrée depuis zéro.
+  target:
+    integration: deltadore_tydom

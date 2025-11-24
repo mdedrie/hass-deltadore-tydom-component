@@ -596,6 +596,12 @@ class GenericBinarySensor(BinarySensorBase):
         )
         self.entity_description = entity_description
         self._attr_device_class = device_class
+        # Set entity category for diagnostic/problem sensors
+        if device_class in (
+            BinarySensorDeviceClass.PROBLEM,
+            BinarySensorDeviceClass.UPDATE,
+        ):
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _get_hub(self):
         """Get the hub instance from hass data."""
@@ -953,6 +959,19 @@ class HACover(CoverEntity, HAEntity):
             return getattr(self._device, "slope", None)
         else:
             return None
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the cover based on position."""
+        position = self.current_cover_position
+        if position is None:
+            return "mdi:window-shutter"
+        if position == 0:
+            return "mdi:window-shutter-closed"
+        elif position == 100:
+            return "mdi:window-shutter-open"
+        else:
+            return "mdi:window-shutter"
 
     # @property
     # def is_closing(self) -> bool:
@@ -1424,6 +1443,14 @@ class HaWindow(CoverEntity, HAEntity):
             LOGGER.error("Unknown state for device %s", self._device.device_id)
             return True
 
+    @property
+    def icon(self) -> str:
+        """Return the icon for the window based on state."""
+        if self.is_closed:
+            return "mdi:window-closed"
+        else:
+            return "mdi:window-open"
+
 
 class HaDoor(CoverEntity, HAEntity):
     """Representation of a Door."""
@@ -1475,6 +1502,14 @@ class HaDoor(CoverEntity, HAEntity):
             raise AttributeError(
                 "The required attributes 'openState' or 'intrusionDetect' are not available in the device."
             )
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the door based on state."""
+        if self.is_closed:
+            return "mdi:door-closed"
+        else:
+            return "mdi:door-open"
 
 
 class HaGate(CoverEntity, HAEntity):
@@ -1720,6 +1755,21 @@ class HaLight(LightEntity, HAEntity):
             return bool(level != 0 if level is not None else False)
         return False
 
+    @property
+    def icon(self) -> str:
+        """Return the icon for the light based on state."""
+        if self.is_on:
+            brightness = self.brightness
+            if brightness is not None and brightness > 0:
+                # Use different icons based on brightness level
+                if brightness < 128:
+                    return "mdi:lightbulb-on-outline"
+                else:
+                    return "mdi:lightbulb-on"
+            return "mdi:lightbulb-on"
+        else:
+            return "mdi:lightbulb-outline"
+
     async def async_turn_on(self, **kwargs):
         """Turn device on."""
         brightness = None
@@ -1806,6 +1856,23 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
                 else:
                     return AlarmControlPanelState.TRIGGERED
         return AlarmControlPanelState.TRIGGERED
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the alarm based on state."""
+        state = self.alarm_state
+        if state == AlarmControlPanelState.TRIGGERED:
+            return "mdi:shield-alert"
+        elif state == AlarmControlPanelState.ARMED_AWAY:
+            return "mdi:shield-home"
+        elif state == AlarmControlPanelState.ARMED_HOME:
+            return "mdi:shield-home-outline"
+        elif state == AlarmControlPanelState.ARMED_NIGHT:
+            return "mdi:shield-moon"
+        elif state == AlarmControlPanelState.PENDING:
+            return "mdi:shield-clock"
+        else:
+            return "mdi:shield-off"
 
     @property
     def device_info(self):
@@ -2527,6 +2594,14 @@ class HASwitch(SwitchEntity, HAEntity):
             state = getattr(self._device, "state", None)
             return state == "ON" if state is not None else False
         return False
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the switch based on state."""
+        if self.is_on:
+            return "mdi:toggle-switch"
+        else:
+            return "mdi:toggle-switch-off"
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
