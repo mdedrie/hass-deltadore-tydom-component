@@ -131,11 +131,16 @@
                     "reload_error": "\n\n✗ Error during reload. Check logs for more details.",
                     "hub_not_found": "\n\n✗ Tydom hub not found. Verify that the integration is properly configured."
                 }
+            },
+            "panel": {
+                "title": "Management Panel",
+                "description": "Access the complete management panel for Delta Dore Tydom integration.\n\nThe panel is accessible via the sidebar menu or directly at:\n{panel_url}\n\nYou can also click on the link in the sidebar menu \"Delta Dore Tydom\"."
             }
         },
         "menu_options": {
             "configure": "Configure",
-            "actions": "Actions"
+            "actions": "Actions",
+            "panel": "Management Panel"
         },
         "error": {
             "invalid_refresh_interval": "Refresh interval is not valid",

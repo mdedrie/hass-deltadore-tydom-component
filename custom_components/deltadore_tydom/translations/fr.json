@@ -132,11 +132,16 @@
                     "reload_error": "\n\n✗ Erreur lors du rechargement. Vérifiez les logs pour plus de détails.",
                     "hub_not_found": "\n\n✗ Hub Tydom introuvable. Vérifiez que l'intégration est correctement configurée."
                 }
+            },
+            "panel": {
+                "title": "Panneau de gestion",
+                "description": "Accédez au panneau de gestion complet de l'intégration Delta Dore Tydom.\n\nLe panneau est accessible via le menu latéral ou directement à l'adresse :\n{panel_url}\n\nVous pouvez également cliquer sur le lien dans le menu latéral \"Delta Dore Tydom\"."
             }
         },
         "menu_options": {
             "configure": "Configurer",
-            "actions": "Actions"
+            "actions": "Actions",
+            "panel": "Panneau de gestion"
         },
         "error": {
             "invalid_refresh_interval": "L'intervalle de rafraîchissement n'est pas valide",

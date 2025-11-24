@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PIN, Platform
 from homeassistant.config_entries import ConfigEntry
@@ -85,8 +86,8 @@ async def register_panel(hass: HomeAssistant) -> None:
     # Register panel
     from homeassistant.components import frontend
     
-    # Register as a custom panel
-    # Using html_url to load the HTML directly which then loads JS and CSS
+    # Register as a custom panel accessible from sidebar
+    # Also accessible via URL: /deltadore_tydom
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
