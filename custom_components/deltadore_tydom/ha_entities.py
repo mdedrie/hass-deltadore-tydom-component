@@ -2098,7 +2098,159 @@ class HAScene(Scene, HAEntity):
         self._device = device
         self._device._ha_device = self  # type: ignore[assignment]
         self._attr_unique_id = f"{self._device.device_id}_scene"
-        self._attr_name = self._device.device_name
+        # Store base name, name with zone will be calculated in async_added_to_hass
+        self._base_name = self._device.device_name
+        self._attr_name = self._base_name  # Temporary name, will be updated
+        # Cache to avoid repeated searches
+        self._cached_tywell_device_id: str | None = None
+        self._cached_zone: str | None = None
+
+    def _is_twc_scene(self) -> bool:
+        """Check if this scene is a TWC scene."""
+        name = self._device.device_name.upper()
+        return any(pattern in name for pattern in ["TWC_DOWN", "TWC_STOP", "TWC_UP"])
+
+    def _get_zone_from_scene(self) -> str | None:
+        """Extract zone (Jour/Nuit or Day/Night) from scene name or grpAct.
+        
+        Returns translation key: "day" or "night" (not the translated string).
+        """
+        # Use cache if available
+        if self._cached_zone is not None:
+            return self._cached_zone
+
+        zone = None
+        # Priority 1: Analyze scene name
+        name = self._device.device_name.upper()
+        # Detect French and English
+        if "JOUR" in name or "DAY" in name or (" J " in name and "NUIT" not in name):
+            zone = "day"  # Translation key
+        elif "NUIT" in name or "NIGHT" in name or " N " in name:
+            zone = "night"  # Translation key
+
+        # Priority 2: Analyze grpAct if zone not found
+        if zone is None:
+            grp_act = getattr(self._device, "grpAct", None)
+            if grp_act and isinstance(grp_act, list):
+                for group in grp_act:
+                    if isinstance(group, dict):
+                        group_id = group.get("id")
+                        if group_id:
+                            group_name = device_name.get(str(group_id), "").upper()
+                            if "JOUR" in group_name or "DAY" in group_name:
+                                zone = "day"
+                                break
+                            if "NUIT" in group_name or "NIGHT" in group_name:
+                                zone = "night"
+                                break
+
+        # Cache result
+        self._cached_zone = zone
+        return zone
+
+    def _get_translated_zone_name(self, zone_key: str | None) -> str | None:
+        """Get translated zone name (Jour/Nuit or Day/Night)."""
+        if not zone_key:
+            return None
+        
+        # Simple translation dictionary based on hass language
+        if self.hass and hasattr(self.hass, "config"):
+            language = self.hass.config.language
+            if language.startswith("fr"):
+                return "Jour" if zone_key == "day" else "Nuit" if zone_key == "night" else None
+            else:
+                return "Day" if zone_key == "day" else "Night" if zone_key == "night" else None
+        
+        # Default French fallback
+        return "Jour" if zone_key == "day" else "Nuit" if zone_key == "night" else None
+
+    def _get_translated_device_name(self, device_key: str, zone_key: str | None = None) -> str:
+        """Get translated device name."""
+        # Simple translation dictionary based on hass language
+        if self.hass and hasattr(self.hass, "config"):
+            language = self.hass.config.language
+            if language.startswith("fr"):
+                if device_key == "tywell_control":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tywell Control {zone_name or ''}".strip()
+                elif device_key == "tydom_scenes":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Scènes Tydom {zone_name or ''}".strip() if zone_name else "Scènes Tydom"
+            else:
+                if device_key == "tywell_control":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tywell Control {zone_name or ''}".strip()
+                elif device_key == "tydom_scenes":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tydom Scenes {zone_name or ''}".strip() if zone_name else "Tydom Scenes"
+        
+        # Default French fallback
+        if device_key == "tywell_control":
+            zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+            return f"Tywell Control {zone_name or ''}".strip()
+        elif device_key == "tydom_scenes":
+            zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+            return f"Scènes Tydom {zone_name or ''}".strip() if zone_name else "Scènes Tydom"
+        return device_key
+
+    def _find_tywell_device(self, zone: str | None = None) -> str | None:
+        """Find Tywell Control device from grpAct/epAct."""
+        # Use cache if available
+        if self._cached_tywell_device_id is not None:
+            return self._cached_tywell_device_id
+
+        try:
+            hub_instance = self._get_hub()
+            if not hub_instance or not hasattr(hub_instance, "devices"):
+                return None
+
+            # Analyze grpAct and epAct to find device IDs
+            device_ids_to_check = set()
+            grp_act = getattr(self._device, "grpAct", None)
+            ep_act = getattr(self._device, "epAct", None)
+
+            # Extract IDs from grpAct
+            if grp_act and isinstance(grp_act, list):
+                for group in grp_act:
+                    if isinstance(group, dict):
+                        group_id = group.get("id")
+                        if group_id:
+                            device_ids_to_check.add(str(group_id))
+
+            # Extract IDs from epAct
+            if ep_act and isinstance(ep_act, list):
+                for endpoint in ep_act:
+                    if isinstance(endpoint, dict):
+                        dev_id = endpoint.get("devId") or endpoint.get("epId")
+                        if dev_id:
+                            device_ids_to_check.add(str(dev_id))
+                        # Also try with "epId_deviceId" format
+                        ep_id = endpoint.get("epId")
+                        dev_id = endpoint.get("devId")
+                        if ep_id and dev_id:
+                            unique_id = f"{ep_id}_{dev_id}"
+                            device_ids_to_check.add(unique_id)
+
+            # Search in hub.devices
+            for device_id in device_ids_to_check:
+                if device_id in hub_instance.devices:
+                    device = hub_instance.devices[device_id]
+                    # Check if it's a Tywell Control
+                    device_name_attr = getattr(device, "device_name", "").upper()
+                    product_name = getattr(device, "productName", "").upper()
+                    if "TYWELL" in product_name or "TYWELL" in device_name_attr or "CONTROL" in device_name_attr:
+                        # Cache result
+                        self._cached_tywell_device_id = device_id
+                        return device_id
+
+            return None
+        except Exception as e:
+            LOGGER.warning(
+                "Error while searching for Tywell Control device for scene %s: %s",
+                self._device.device_id,
+                e,
+            )
+            return None
 
     @property
     def icon(self) -> str:
@@ -2248,13 +2400,84 @@ class HAScene(Scene, HAEntity):
         """Return information to link this entity with the correct device."""
         device_info = self._get_device_info()
         info: DeviceInfo = {
-            "identifiers": {(DOMAIN, self._device.device_id)},
-            "name": self._device.device_name,
             "manufacturer": device_info["manufacturer"],
         }
+
+        # If it's a TWC scene, group it under a parent device
+        if self._is_twc_scene():
+            zone = self._get_zone_from_scene()
+            
+            # Option 1 (priority): Tywell Control device
+            tywell_device_id = self._find_tywell_device(zone)
+            if tywell_device_id:
+                info["identifiers"] = {(DOMAIN, tywell_device_id)}
+                # Get Tywell device name
+                hub_instance = self._get_hub()
+                if hub_instance and hasattr(hub_instance, "devices"):
+                    tywell_device = hub_instance.devices.get(tywell_device_id)
+                    if tywell_device:
+                        device_name_attr = getattr(tywell_device, "device_name", None)
+                        if device_name_attr:
+                            info["name"] = device_name_attr
+                        else:
+                            info["name"] = self._get_translated_device_name("tywell_control", zone)
+                    else:
+                        info["name"] = self._get_translated_device_name("tywell_control", zone)
+                else:
+                    info["name"] = self._get_translated_device_name("tywell_control", zone)
+            else:
+                # Option 2: Main Tydom device
+                gateway_device_id = self._get_tydom_gateway_device_id()
+                if gateway_device_id:
+                    info["identifiers"] = {(DOMAIN, gateway_device_id)}
+                    # Get gateway name
+                    hub_instance = self._get_hub()
+                    if hub_instance and hasattr(hub_instance, "devices"):
+                        gateway_device = hub_instance.devices.get(gateway_device_id)
+                        if gateway_device:
+                            info["name"] = getattr(gateway_device, "device_name", "Tydom Gateway")
+                        else:
+                            info["name"] = "Tydom Gateway"
+                    else:
+                        info["name"] = "Tydom Gateway"
+                else:
+                    # Option 3: Dedicated scenes device
+                    if zone:
+                        info["identifiers"] = {(DOMAIN, f"tydom_scenes_{zone.lower()}")}
+                        info["name"] = self._get_translated_device_name("tydom_scenes", zone)
+                    else:
+                        info["identifiers"] = {(DOMAIN, "tydom_scenes")}
+                        info["name"] = self._get_translated_device_name("tydom_scenes", None)
+        else:
+            # Non-TWC scene: current behavior (individual device)
+            info["identifiers"] = {(DOMAIN, self._device.device_id)}
+            info["name"] = self._device.device_name
+
         if "model" in device_info:
             info["model"] = device_info["model"]
+        
         return self._enrich_device_info(info)
+
+    async def async_added_to_hass(self) -> None:
+        """Run when this Entity has been added to HA."""
+        # Call parent method
+        await super().async_added_to_hass()
+        
+        # Update name with translated zone if it's a TWC scene
+        if self._is_twc_scene():
+            zone_key = self._get_zone_from_scene()
+            if zone_key:
+                # Check if zone is already in the name (French or English)
+                base_name_upper = self._base_name.upper()
+                zone_already_present = (
+                    "JOUR" in base_name_upper or "NUIT" in base_name_upper
+                    or "DAY" in base_name_upper or "NIGHT" in base_name_upper
+                    or " J " in base_name_upper or " N " in base_name_upper
+                )
+                if not zone_already_present:
+                    zone_name = self._get_translated_zone_name(zone_key)
+                    if zone_name:
+                        self._attr_name = f"{self._base_name} - {zone_name}"
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Activate the scene."""

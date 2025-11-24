@@ -173,6 +173,22 @@
                 "affected_endpoints": {
                     "name": "Endpoints affectés"
                 }
+            },
+            "zone": {
+                "day": {
+                    "name": "Jour"
+                },
+                "night": {
+                    "name": "Nuit"
+                }
+            },
+            "device": {
+                "tywell_control": {
+                    "name": "Tywell Control"
+                },
+                "tydom_scenes": {
+                    "name": "Scènes Tydom"
+                }
             }
         },
         "switch": {
