@@ -446,14 +446,20 @@ ${this._logs.join("\n")}
   // Register the custom element
   customElements.define("tydom-panel", TydomPanel);
 
-  // Create and append the panel element to the document
-  if (document.body) {
-    const panel = document.createElement("tydom-panel");
-    document.body.appendChild(panel);
-  } else {
-    document.addEventListener("DOMContentLoaded", () => {
+  // Wait for Home Assistant to be ready
+  const initPanel = function() {
+    // Clear any existing content
+    if (document.body) {
+      document.body.innerHTML = '';
       const panel = document.createElement("tydom-panel");
       document.body.appendChild(panel);
-    });
+    }
+  };
+
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPanel);
+  } else {
+    initPanel();
   }
 })();
