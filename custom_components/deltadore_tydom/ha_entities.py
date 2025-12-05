@@ -2176,6 +2176,8 @@ class HAScene(Scene, HAEntity):
         self._cached_tywell_device_id: str | None = None
         self._cached_zone: str | None = None
         self._cached_affected_device_ids: set[str] | None = None
+        # Store related entity IDs for scene configuration
+        self._related_entity_ids: list[str] = []
 
     def _is_twc_scene(self) -> bool:
         """Check if this scene is a TWC (Tywell Control) scene.
@@ -2736,26 +2738,26 @@ class HAScene(Scene, HAEntity):
                                 affected_device_names.append(str(product_name))
                 if affected_device_names:
                     attrs["affected_device_names"] = affected_device_names
+        
+        # Add related entity IDs for scene configuration
+        # This allows Home Assistant to know which entities are controlled by this scene
+        if hasattr(self, '_related_entity_ids') and self._related_entity_ids:
+            attrs["entity_id"] = self._related_entity_ids
+            attrs["entities"] = self._related_entity_ids
 
         return attrs
 
     @property
-    def device_info(self) -> DeviceInfo:
-        """Return information to link this entity with the correct device."""
-        device_info = self._get_device_info()
-        info: DeviceInfo = {
-            "manufacturer": device_info["manufacturer"],
-        }
-
-        # Each scene has its own device with unique identifier
-        scene_device_id = f"scene_{self._device.device_id}"
-        info["identifiers"] = {(DOMAIN, scene_device_id)}
-        info["name"] = self._base_name
-
-        if "model" in device_info:
-            info["model"] = device_info["model"]
+    def device_info(self) -> DeviceInfo | None:
+        """Return information to link this entity with the correct device.
         
-        return self._enrich_device_info(info)
+        Scenes should not have their own device - they are associated with the gateway.
+        Return None to prevent creating a separate device for each scene.
+        """
+        # Scenes should not appear as separate devices in Home Assistant
+        # They are entities that belong to the Tydom gateway
+        # Return None to prevent device creation
+        return None
 
     async def async_added_to_hass(self) -> None:
         """Run when this Entity has been added to HA."""
@@ -2844,7 +2846,7 @@ class HAScene(Scene, HAEntity):
         """Create relations between this scene and the devices it affects.
         
         This allows Home Assistant to display scenes on the devices they control.
-        Creates explicit relations between the scene entity and entities of affected devices.
+        Stores entity IDs for scene configuration.
         """
         try:
             from homeassistant.helpers import device_registry as dr
@@ -2881,21 +2883,7 @@ class HAScene(Scene, HAEntity):
                 )
                 return
             
-            # Verify that scene device exists in the device registry
-            scene_device_id = f"scene_{self._device.device_id}"
-            scene_device_entry = device_registry.async_get_device(
-                identifiers={(DOMAIN, scene_device_id)}
-            )
-            
-            if not scene_device_entry:
-                # Scene device not yet registered, will be created later
-                LOGGER.debug(
-                    "Scene device %s not yet registered, relations will be created later",
-                    scene_device_id,
-                )
-                return
-            
-            # Find entities for each affected device and create relations
+            # Find entities for each affected device
             related_entities = []
             found_devices = []
             
@@ -2922,8 +2910,6 @@ class HAScene(Scene, HAEntity):
                     
                     related_entities.append(entity_entry.entity_id)
                     
-                    # Create relation: scene controls this entity
-                    # Home Assistant will automatically show this relation in the UI
                     LOGGER.debug(
                         "Scene %s controls entity %s (device %s)",
                         self._device.device_id,
@@ -2931,7 +2917,13 @@ class HAScene(Scene, HAEntity):
                         affected_device_id,
                     )
             
-            if found_devices:
+            # Store related entities for scene configuration
+            if related_entities:
+                # Store in a cache that can be accessed by extra_state_attributes
+                if not hasattr(self, '_related_entity_ids'):
+                    self._related_entity_ids = []
+                self._related_entity_ids = related_entities
+                
                 LOGGER.info(
                     "Scene %s (%s) is linked to %d device(s) with %d related entity/ies: %s",
                     self._device.device_id,
