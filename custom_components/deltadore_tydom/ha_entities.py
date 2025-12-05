@@ -2170,6 +2170,8 @@ class HAScene(Scene, HAEntity):
         # Store base name, name with zone will be calculated in async_added_to_hass
         self._base_name = self._device.device_name
         self._attr_name = self._base_name  # Temporary name, will be updated
+        # Make scene editable in Home Assistant
+        self._attr_is_editable = True
         # Cache to avoid repeated searches
         self._cached_tywell_device_id: str | None = None
         self._cached_zone: str | None = None
@@ -2842,14 +2844,15 @@ class HAScene(Scene, HAEntity):
         """Create relations between this scene and the devices it affects.
         
         This allows Home Assistant to display scenes on the devices they control.
-        Relations are created automatically by Home Assistant based on device_info,
-        so we mainly log the relationships for debugging.
+        Creates explicit relations between the scene entity and entities of affected devices.
         """
         try:
             from homeassistant.helpers import device_registry as dr
+            from homeassistant.helpers import entity_registry as er
             
-            # Get device registry
+            # Get device and entity registries
             device_registry = dr.async_get(self.hass)
+            entity_registry = er.async_get(self.hass)
             
             # Get affected device IDs
             affected_device_ids = self._get_affected_device_ids()
@@ -2860,7 +2863,25 @@ class HAScene(Scene, HAEntity):
                 )
                 return
             
-            # Verify that affected devices exist in the device registry
+            # Get the scene entity entry
+            scene_entity_id = self.entity_id
+            if not scene_entity_id:
+                # Entity not yet registered, skip for now
+                LOGGER.debug(
+                    "Scene entity %s not yet registered, relations will be created later",
+                    self._device.device_id,
+                )
+                return
+            
+            scene_entity_entry = entity_registry.async_get(scene_entity_id)
+            if not scene_entity_entry:
+                LOGGER.debug(
+                    "Scene entity entry not found for %s",
+                    scene_entity_id,
+                )
+                return
+            
+            # Verify that scene device exists in the device registry
             scene_device_id = f"scene_{self._device.device_id}"
             scene_device_entry = device_registry.async_get_device(
                 identifiers={(DOMAIN, scene_device_id)}
@@ -2874,20 +2895,49 @@ class HAScene(Scene, HAEntity):
                 )
                 return
             
-            # Count how many affected devices are found in the registry
+            # Find entities for each affected device and create relations
+            related_entities = []
             found_devices = []
+            
             for affected_device_id in affected_device_ids:
+                # Find the device in the registry
                 device_entry = device_registry.async_get_device(
                     identifiers={(DOMAIN, affected_device_id)}
                 )
-                if device_entry:
-                    found_devices.append(affected_device_id)
+                
+                if not device_entry:
+                    continue
+                
+                found_devices.append(affected_device_id)
+                
+                # Find all entities associated with this device
+                device_entities = er.async_entries_for_device(
+                    entity_registry, device_entry.id
+                )
+                
+                for entity_entry in device_entities:
+                    # Skip the scene entity itself
+                    if entity_entry.entity_id == scene_entity_id:
+                        continue
+                    
+                    related_entities.append(entity_entry.entity_id)
+                    
+                    # Create relation: scene controls this entity
+                    # Home Assistant will automatically show this relation in the UI
+                    LOGGER.debug(
+                        "Scene %s controls entity %s (device %s)",
+                        self._device.device_id,
+                        entity_entry.entity_id,
+                        affected_device_id,
+                    )
             
             if found_devices:
-                LOGGER.debug(
-                    "Scene %s affects %d device(s): %s",
+                LOGGER.info(
+                    "Scene %s (%s) is linked to %d device(s) with %d related entity/ies: %s",
                     self._device.device_id,
+                    self._base_name,
                     len(found_devices),
+                    len(related_entities),
                     found_devices,
                 )
             else:
