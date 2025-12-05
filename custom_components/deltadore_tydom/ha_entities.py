@@ -3635,13 +3635,79 @@ class HAScene(Scene, HAEntity):
     def device_info(self) -> DeviceInfo | None:
         """Return information to link this entity with the correct device.
         
-        Scenes should not have their own device - they are associated with the gateway.
-        Return None to prevent creating a separate device for each scene.
+        Scenes are grouped into virtual devices:
+        - TWC scenes are grouped by zone (Day/Night) into virtual "Tywell Control [Zone]" devices
+        - Other scenes are grouped into a virtual "Scènes Tydom" device
         """
-        # Scenes should not appear as separate devices in Home Assistant
-        # They are entities that belong to the Tydom gateway
-        # Return None to prevent device creation
-        return None
+        # Get gateway device ID for via_device fallback
+        gateway_device_id = self._get_tydom_gateway_device_id()
+        
+        # Check if this is a TWC scene
+        if self._is_twc_scene():
+            # Get zone (day/night)
+            zone_key = self._get_zone_from_scene()
+            
+            if zone_key:
+                # Create virtual device identifier for this zone
+                device_identifier = f"tywell_control_{zone_key}"
+                
+                # Get translated device name with zone
+                device_name = self._get_translated_device_name("tywell_control", zone_key)
+                
+                # Try to find the physical Tywell Control device for this zone
+                tywell_device_id = self._find_tywell_device(zone_key)
+                
+                # Determine via_device: use physical Tywell Control if found, otherwise gateway
+                if tywell_device_id and gateway_device_id:
+                    # Verify the device exists in hub (it should be in device registry if it exists here)
+                    hub_instance = self._get_hub()
+                    if hub_instance and hasattr(hub_instance, "devices"):
+                        if tywell_device_id in hub_instance.devices:
+                            via_device_id = tywell_device_id
+                        else:
+                            via_device_id = gateway_device_id
+                    else:
+                        via_device_id = gateway_device_id
+                else:
+                    via_device_id = gateway_device_id
+                
+                # Create DeviceInfo for virtual device grouping TWC scenes by zone
+                info: DeviceInfo = {
+                    "identifiers": {(DOMAIN, device_identifier)},
+                    "name": device_name,
+                    "manufacturer": "Delta Dore",
+                    "model": "Tywell Control",
+                }
+                
+                # Link to physical device or gateway
+                if via_device_id:
+                    info["via_device"] = (DOMAIN, via_device_id)
+                
+                return info
+            else:
+                # TWC scene but zone not determined - fallback to general scenes device
+                device_name = self._get_translated_device_name("tydom_scenes")
+                info: DeviceInfo = {
+                    "identifiers": {(DOMAIN, "tydom_scenes")},
+                    "name": device_name,
+                    "manufacturer": "Delta Dore",
+                    "model": "Tydom Scenes",
+                }
+                if gateway_device_id:
+                    info["via_device"] = (DOMAIN, gateway_device_id)
+                return info
+        else:
+            # Non-TWC scene - group in "Scènes Tydom" virtual device
+            device_name = self._get_translated_device_name("tydom_scenes")
+            info: DeviceInfo = {
+                "identifiers": {(DOMAIN, "tydom_scenes")},
+                "name": device_name,
+                "manufacturer": "Delta Dore",
+                "model": "Tydom Scenes",
+            }
+            if gateway_device_id:
+                info["via_device"] = (DOMAIN, gateway_device_id)
+            return info
 
     async def async_added_to_hass(self) -> None:
         """Run when this Entity has been added to HA."""
