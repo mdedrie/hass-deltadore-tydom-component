@@ -54,3 +54,17 @@ activate_group_scenario:
       required: true
       selector:
         text:
+create_scene:
+  name: Create or update scene
+  description: Create or update a Tydom scene with specific entities. This allows you to modify which entities are controlled by a Tydom scene in Home Assistant.
+  target:
+    entity:
+      integration: deltadore_tydom
+      domain: scene
+  fields:
+    entities:
+      name: Entities
+      description: Dictionary of entities and their states to include in the scene
+      required: true
+      selector:
+        object:

@@ -137,16 +137,11 @@
                     "reload_error": "\n\n✗ Erreur lors du rechargement. Vérifiez les logs pour plus de détails.",
                     "hub_not_found": "\n\n✗ Hub Tydom introuvable. Vérifiez que l'intégration est correctement configurée."
                 }
-            },
-            "panel": {
-                "title": "Panneau de gestion",
-                "description": "Accédez au panneau de gestion complet de l'intégration Delta Dore Tydom.\n\nLe panneau est accessible via le menu latéral ou directement à l'adresse :\n{panel_url}\n\nVous pouvez également cliquer sur le lien dans le menu latéral \"Delta Dore Tydom\"."
             }
         },
         "menu_options": {
             "configure": "Configurer",
-            "actions": "Actions",
-            "panel": "Panneau de gestion"
+            "actions": "Actions"
         },
         "error": {
             "invalid_refresh_interval": "L'intervalle de rafraîchissement n'est pas valide",
@@ -595,95 +590,6 @@
                 }
             }
         }
-    },
-    "panel": {
-        "tabs": {
-            "status": "Statut",
-            "devices": "Appareils",
-            "config": "Configuration",
-            "actions": "Actions",
-            "logs": "Logs"
-        },
-        "status": {
-            "title": "Statut de l'intégration",
-            "connection": "Connexion",
-            "host": "Host",
-            "mac": "Adresse MAC",
-            "mode": "Mode",
-            "refresh_interval": "Intervalle de rafraîchissement",
-            "total_devices": "Appareils totaux",
-            "total_entities": "Entités HA",
-            "checking": "Vérification...",
-            "zones": {
-                "title": "Zones d'alarme",
-                "home": "Présent",
-                "away": "Absent",
-                "night": "Nuit"
-            },
-            "devices_by_type": "Appareils par type"
-        },
-        "devices": {
-            "title": "Appareils découverts",
-            "search_placeholder": "Rechercher...",
-            "filter_all": "Tous les types",
-            "table": {
-                "name": "Nom",
-                "type": "Type",
-                "device_id": "Device ID",
-                "endpoint": "Endpoint",
-                "actions": "Actions"
-            },
-            "details": {
-                "title": "Détails de l'appareil"
-            }
-        },
-        "config": {
-            "title": "Configuration",
-            "zones": {
-                "title": "Zones d'alarme",
-                "home": "Zones Présent",
-                "away": "Zones Absent",
-                "night": "Zones Nuit",
-                "home_placeholder": "Ex: 1,2,4",
-                "away_placeholder": "Ex: 1,2,4",
-                "night_placeholder": "Ex: 1,2,4",
-                "help": "Séparées par des virgules (ex: 1,2,4)"
-            },
-            "refresh": {
-                "title": "Rafraîchissement",
-                "interval": "Intervalle (minutes)",
-                "help": "Entre 1 et 1440 minutes"
-            },
-            "info": {
-                "title": "Informations",
-                "host": "Host",
-                "mac": "Adresse MAC",
-                "mode": "Mode"
-            },
-            "save": "Enregistrer",
-            "reset": "Réinitialiser"
-        },
-        "actions": {
-            "title": "Actions",
-            "reload_devices": {
-                "title": "Recharger les appareils",
-                "description": "Supprime et recrée tous les appareils et entités",
-                "button": "Recharger"
-            },
-            "test_connection": {
-                "title": "Tester la connexion",
-                "description": "Vérifie les identifiants et la connexion au hub",
-                "button": "Tester"
-            }
-        },
-        "logs": {
-            "title": "Logs",
-            "filter_all": "Tous les niveaux",
-            "auto_refresh": "Actualisation auto",
-            "refresh": "Actualiser",
-            "clear": "Effacer"
-        },
-        "loading": "Chargement..."
     }
 }
 

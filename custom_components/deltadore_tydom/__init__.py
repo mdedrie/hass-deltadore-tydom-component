@@ -98,63 +98,53 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     
     hass.services.async_register(DOMAIN, "activate_group_scenario", handle_activate_group_scenario)
     
-    # Register panel and API routes
-    try:
-        await register_panel(hass)
-    except Exception as e:
-        LOGGER.error("Erreur lors de l'enregistrement du panneau: %s", e, exc_info=True)
+    # Register service for creating/updating Tydom scenes
+    async def handle_create_scene(call):
+        """Handle create_scene service call."""
+        entity_id = call.data.get("entity_id")
+        entities = call.data.get("entities", {})
+        
+        if not entity_id:
+            LOGGER.error("create_scene requires entity_id")
+            return
+        
+        # Get the entity
+        from homeassistant.helpers import entity_registry as er
+        entity_registry = er.async_get(hass)
+        entity_entry = entity_registry.async_get(entity_id)
+        
+        if not entity_entry:
+            LOGGER.error("Entity %s not found", entity_id)
+            return
+        
+        # Check if it's a scene entity from this integration
+        if entity_entry.platform != DOMAIN or entity_entry.domain != "scene":
+            LOGGER.error("Entity %s is not a Tydom scene", entity_id)
+            return
+        
+        # Get the hub
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.error("No Tydom hub found")
+            return
+        
+        # Find the entity in the hub
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            if entity_id in tydom_hub.ha_devices:
+                ha_device = tydom_hub.ha_devices[entity_id]
+                if hasattr(ha_device, "async_create"):
+                    await ha_device.async_create(entities=entities)
+                    LOGGER.info("Scene %s created/updated with %d entities", entity_id, len(entities))
+                    return
+        
+        LOGGER.error("Scene entity %s not found in any hub", entity_id)
+    
+    hass.services.async_register(DOMAIN, "create_scene", handle_create_scene)
+    
+    # Panel and API routes removed - no longer needed
     
     return True
 
 
-async def register_panel(hass: HomeAssistant) -> None:
-    """Register the custom panel and API routes."""
-    # Register API views
-    from . import panel
-    from homeassistant.components import http
-    
-    hass.http.register_view(panel.TydomStatusView())
-    hass.http.register_view(panel.TydomDevicesView())
-    hass.http.register_view(panel.TydomGroupsView())
-    hass.http.register_view(panel.TydomMomentsView())
-    hass.http.register_view(panel.TydomConfigView())
-    hass.http.register_view(panel.TydomActionsView())
-    hass.http.register_view(panel.TydomLogsView())
-    hass.http.register_view(panel.TydomInstancesView())
-    hass.http.register_view(panel.TydomPanelView())
-    hass.http.register_view(panel.TydomLovelacePanelView())
-    hass.http.register_view(panel.TydomStaticView("panel.js", "application/javascript"))
-    hass.http.register_view(panel.TydomStaticView("panel.css", "text/css"))
-    hass.http.register_view(panel.TydomStaticView("tydom-panel.js", "application/javascript"))
-    hass.http.register_view(panel.TydomPanelLoaderView())
-    
-    # Register panel
-    from homeassistant.components import frontend
-    
-    # Register as a custom panel accessible from sidebar
-    # Also accessible via URL: /deltadore_tydom
-    # Using Lovelace native panel with Lit Element
-    panel_config = {
-        "_panel_custom": {
-            "name": "deltadore-tydom-panel",
-            "embed_iframe": False,
-            "trust_external": False,
-            "js_url": "/api/deltadore_tydom/frontend/tydom-panel.js",
-        }
-    }
-    
-    frontend.async_register_built_in_panel(
-        hass,
-        component_name="custom",
-        sidebar_title="Delta Dore Tydom",
-        sidebar_icon="mdi:home-automation",
-        frontend_url_path="deltadore_tydom",
-        require_admin=True,
-        config=panel_config,
-    )
-    
-    LOGGER.info("Panneau Delta Dore Tydom enregistré avec succès")
-    LOGGER.debug("Configuration du panneau: js_url=%s", panel_config.get("_panel_custom", {}).get("js_url", "N/A"))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

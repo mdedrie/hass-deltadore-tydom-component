@@ -2833,6 +2833,8 @@ class HAScene(Scene, HAEntity):
         self._cached_affected_device_ids: set[str] | None = None
         # Store related entity IDs for scene configuration
         self._related_entity_ids: list[str] = []
+        # Store entity states for scene editor (dict of entity_id -> state dict)
+        self._scene_entities: dict[str, Any] = {}
 
     def _is_twc_scene(self) -> bool:
         """Check if this scene is a TWC (Tywell Control) scene.
@@ -3612,13 +3614,22 @@ class HAScene(Scene, HAEntity):
         if detailed_actions:
             attrs["detailed_actions"] = detailed_actions
         
-        # Add related entity IDs for scene configuration
+        # Add related entity IDs and states for scene configuration
         # This allows Home Assistant to know which entities are controlled by this scene
         if hasattr(self, '_related_entity_ids') and self._related_entity_ids:
             attrs["entity_id"] = self._related_entity_ids
             attrs["entities"] = self._related_entity_ids
+        
+        # Add entity states if available (for scene editor)
+        if hasattr(self, '_scene_entities') and self._scene_entities:
+            attrs["scene_entities"] = self._scene_entities
 
         return attrs
+
+    @property
+    def is_editable(self) -> bool:
+        """Return True if the scene is editable in Home Assistant."""
+        return True
 
     @property
     def device_info(self) -> DeviceInfo | None:
@@ -3797,6 +3808,17 @@ class HAScene(Scene, HAEntity):
                     self._related_entity_ids = []
                 self._related_entity_ids = related_entities
                 
+                # Initialize _scene_entities with empty states for each entity
+                # This allows the scene editor to recognize and modify the scene
+                if not hasattr(self, '_scene_entities'):
+                    self._scene_entities = {}
+                
+                # Add entities to _scene_entities if not already present
+                for entity_id in related_entities:
+                    if entity_id not in self._scene_entities:
+                        # Initialize with empty state (will be filled when scene is edited)
+                        self._scene_entities[entity_id] = {}
+                
                 LOGGER.info(
                     "Scene %s (%s) is linked to %d device(s) with %d related entity/ies: %s",
                     self._device.device_id,
@@ -3833,6 +3855,55 @@ class HAScene(Scene, HAEntity):
             raise HomeAssistantError(
                 f"Failed to activate scene '{scene_name}': {str(e)}"
             ) from e
+
+    async def async_create(self, **kwargs: Any) -> None:
+        """Create or update the scene with new entities.
+        
+        This method allows Home Assistant to create/modify scenes via scene.create service.
+        Note: This modifies the Home Assistant representation of the scene, not the Tydom scene itself.
+        The Tydom scene will still activate its predefined scenario when activated.
+        """
+        from homeassistant.exceptions import HomeAssistantError
+        
+        # Get entities from kwargs
+        entities = kwargs.get("entities")
+        if not entities:
+            raise HomeAssistantError("No entities provided for scene creation")
+        
+        # Store the entities for this scene
+        # This allows Home Assistant to know which entities are controlled by this scene
+        if not hasattr(self, '_related_entity_ids'):
+            self._related_entity_ids = []
+        
+        # Extract entity IDs from the entities dict
+        entity_ids = []
+        if isinstance(entities, dict):
+            entity_ids = list(entities.keys())
+        elif isinstance(entities, list):
+            entity_ids = entities
+        
+        self._related_entity_ids = entity_ids
+        
+        # Store the full entities dict for scene.apply
+        self._scene_entities = entities if isinstance(entities, dict) else {}
+        
+        LOGGER.info(
+            "Scene %s (%s) created/updated with %d entities: %s",
+            self._device.device_id,
+            self._base_name,
+            len(entity_ids),
+            entity_ids,
+        )
+        
+        # Update extra state attributes to reflect the new entities
+        await self.async_update_ha_state()
+
+    async def async_update(self, **kwargs: Any) -> None:
+        """Update the scene with new entities.
+        
+        This method allows Home Assistant to modify scenes via scene.apply service.
+        """
+        await self.async_create(**kwargs)
 
 
 class HAMoment(SwitchEntity, HAEntity):

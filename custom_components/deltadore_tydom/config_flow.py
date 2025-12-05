@@ -1090,7 +1090,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         
         return self.async_show_menu(
             step_id="init",
-            menu_options=["configure", "actions", "panel"],
+            menu_options=["configure", "actions"],
         )
 
     async def async_step_configure(self, user_input: dict[str, Any] | None = None):
@@ -1288,18 +1288,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             },
         )
 
-    async def async_step_panel(self, user_input: dict[str, Any] | None = None):
-        """Show link to management panel."""
-        if self.config_entry is None:
-            return self.async_abort(reason="config_entry_not_found")
-        
-        # Show form with link to panel
-        return self.async_show_form(
-            step_id="panel",
-            description_placeholders={
-                "panel_url": "/deltadore_tydom",
-            },
-        )
 
 
 class CannotConnect(exceptions.HomeAssistantError):
