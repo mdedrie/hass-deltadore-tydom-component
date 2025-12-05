@@ -591,8 +591,37 @@ class TydomScene(TydomDevice):
         return getattr(self, "_ep_act", None)
 
     async def activate(self) -> None:
-        """Activate the scene."""
-        LOGGER.debug("Activating scene %s", self.device_id)
-        # Scenarios are activated via PUT /scenarios/{id}
+        """Activate the scene.
+        
+        Raises:
+            Exception: If activation fails, with detailed error information.
+        """
         scene_id = getattr(self, "scene_id", None) or self._id
-        await self._tydom_client.activate_scenario(scene_id)
+        scene_name = getattr(self, "device_name", "Unknown")
+        
+        LOGGER.info(
+            "Activating scene: id=%s, name=%s, device_id=%s",
+            scene_id,
+            scene_name,
+            self.device_id,
+        )
+        
+        try:
+            # Scenarios are activated via PUT /scenarios/{id}
+            await self._tydom_client.activate_scenario(scene_id)
+            LOGGER.debug(
+                "Scene activation request sent successfully: id=%s, name=%s",
+                scene_id,
+                scene_name,
+            )
+        except Exception as e:
+            LOGGER.error(
+                "Failed to activate scene: id=%s, name=%s, device_id=%s, error=%s",
+                scene_id,
+                scene_name,
+                self.device_id,
+                e,
+                exc_info=True,
+            )
+            # Re-raise to allow Home Assistant to handle the error
+            raise

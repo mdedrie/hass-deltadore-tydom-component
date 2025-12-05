@@ -448,6 +448,11 @@ class Hub:
         try:
             await stored_device.update_device(device)
             ha_device = self.ha_devices[device.device_id]
+            
+            # Special handling for scenes: invalidate caches and recreate relations
+            if isinstance(device, TydomScene) and isinstance(ha_device, HAScene):
+                await ha_device.async_device_update(device)
+            
             new_sensors = ha_device.get_sensors()
             if len(new_sensors) > 0 and self.add_sensor_callback is not None:
                 # add new sensors
