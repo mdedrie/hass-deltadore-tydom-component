@@ -643,11 +643,40 @@ class TydomClient:
         await self.send_message(method=req, msg=msg_type)
 
     async def activate_scenario(self, scenario_id: str | int):
-        """Activate a scenario."""
+        """Activate a scenario.
+        
+        Args:
+            scenario_id: The scenario ID to activate.
+            
+        Raises:
+            Exception: If the activation request fails.
+        """
         # PUT /scenarios/{id}
         msg_type = f"/scenarios/{scenario_id}"
         req = "PUT"
-        await self.send_message(method=req, msg=msg_type)
+        
+        LOGGER.debug(
+            "Sending scenario activation request: method=%s, path=%s, scenario_id=%s",
+            req,
+            msg_type,
+            scenario_id,
+        )
+        
+        try:
+            await self.send_message(method=req, msg=msg_type)
+            LOGGER.debug(
+                "Scenario activation request sent: scenario_id=%s",
+                scenario_id,
+            )
+        except Exception as e:
+            LOGGER.error(
+                "Failed to send scenario activation request: scenario_id=%s, error=%s",
+                scenario_id,
+                e,
+                exc_info=True,
+            )
+            # Re-raise to allow caller to handle the error
+            raise
 
     async def get_groups(self):
         """Get the groups."""

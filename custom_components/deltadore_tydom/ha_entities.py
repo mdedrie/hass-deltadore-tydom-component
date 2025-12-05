@@ -97,7 +97,7 @@ from .tydom.tydom_devices import (
 )
 
 from .const import DOMAIN, LOGGER
-from .tydom.MessageHandler import device_name
+from .tydom.MessageHandler import device_name, groups_data
 
 
 class HAEntity:
@@ -533,8 +533,10 @@ class BinarySensorBase(BinarySensorEntity):
         # Add name if available
         if hasattr(self._device, "device_name") and self._device.device_name:
             info["name"] = self._device.device_name
-        elif hasattr(self._device, "productName") and self._device.productName:
-            info["name"] = str(self._device.productName)
+        elif hasattr(self._device, "productName"):
+            product_name = getattr(self._device, "productName", None)
+            if product_name is not None:
+                info["name"] = str(product_name)
         else:
             info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
         # Try to get manufacturer and model
@@ -594,6 +596,12 @@ class GenericBinarySensor(BinarySensorBase):
         )
         self.entity_description = entity_description
         self._attr_device_class = device_class
+        # Set entity category for diagnostic/problem sensors
+        if device_class in (
+            BinarySensorDeviceClass.PROBLEM,
+            BinarySensorDeviceClass.UPDATE,
+        ):
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _get_hub(self):
         """Get the hub instance from hass data."""
@@ -951,6 +959,19 @@ class HACover(CoverEntity, HAEntity):
             return getattr(self._device, "slope", None)
         else:
             return None
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the cover based on position."""
+        position = self.current_cover_position
+        if position is None:
+            return "mdi:window-shutter"
+        if position == 0:
+            return "mdi:window-shutter-closed"
+        elif position == 100:
+            return "mdi:window-shutter-open"
+        else:
+            return "mdi:window-shutter"
 
     # @property
     # def is_closing(self) -> bool:
@@ -1422,6 +1443,14 @@ class HaWindow(CoverEntity, HAEntity):
             LOGGER.error("Unknown state for device %s", self._device.device_id)
             return True
 
+    @property
+    def icon(self) -> str:
+        """Return the icon for the window based on state."""
+        if self.is_closed:
+            return "mdi:window-closed"
+        else:
+            return "mdi:window-open"
+
 
 class HaDoor(CoverEntity, HAEntity):
     """Representation of a Door."""
@@ -1473,6 +1502,14 @@ class HaDoor(CoverEntity, HAEntity):
             raise AttributeError(
                 "The required attributes 'openState' or 'intrusionDetect' are not available in the device."
             )
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the door based on state."""
+        if self.is_closed:
+            return "mdi:door-closed"
+        else:
+            return "mdi:door-open"
 
 
 class HaGate(CoverEntity, HAEntity):
@@ -1718,6 +1755,21 @@ class HaLight(LightEntity, HAEntity):
             return bool(level != 0 if level is not None else False)
         return False
 
+    @property
+    def icon(self) -> str:
+        """Return the icon for the light based on state."""
+        if self.is_on:
+            brightness = self.brightness
+            if brightness is not None and brightness > 0:
+                # Use different icons based on brightness level
+                if brightness < 128:
+                    return "mdi:lightbulb-on-outline"
+                else:
+                    return "mdi:lightbulb-on"
+            return "mdi:lightbulb-on"
+        else:
+            return "mdi:lightbulb-outline"
+
     async def async_turn_on(self, **kwargs):
         """Turn device on."""
         brightness = None
@@ -1804,6 +1856,23 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
                 else:
                     return AlarmControlPanelState.TRIGGERED
         return AlarmControlPanelState.TRIGGERED
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the alarm based on state."""
+        state = self.alarm_state
+        if state == AlarmControlPanelState.TRIGGERED:
+            return "mdi:shield-alert"
+        elif state == AlarmControlPanelState.ARMED_AWAY:
+            return "mdi:shield-home"
+        elif state == AlarmControlPanelState.ARMED_HOME:
+            return "mdi:shield-home-outline"
+        elif state == AlarmControlPanelState.ARMED_NIGHT:
+            return "mdi:shield-moon"
+        elif state == AlarmControlPanelState.PENDING:
+            return "mdi:shield-clock"
+        else:
+            return "mdi:shield-off"
 
     @property
     def device_info(self):
@@ -2098,7 +2167,414 @@ class HAScene(Scene, HAEntity):
         self._device = device
         self._device._ha_device = self  # type: ignore[assignment]
         self._attr_unique_id = f"{self._device.device_id}_scene"
-        self._attr_name = self._device.device_name
+        # Store base name, name with zone will be calculated in async_added_to_hass
+        self._base_name = self._device.device_name
+        self._attr_name = self._base_name  # Temporary name, will be updated
+        # Make scene editable in Home Assistant
+        self._attr_is_editable = True
+        # Cache to avoid repeated searches
+        self._cached_tywell_device_id: str | None = None
+        self._cached_zone: str | None = None
+        self._cached_affected_device_ids: set[str] | None = None
+        # Store related entity IDs for scene configuration
+        self._related_entity_ids: list[str] = []
+
+    def _is_twc_scene(self) -> bool:
+        """Check if this scene is a TWC (Tywell Control) scene.
+        
+        TWC scenes typically have names containing TWC_UP, TWC_DOWN, TWC_STOP,
+        or variations like TWC UP, TWC DOWN, etc.
+        """
+        name = self._device.device_name.upper()
+        # Check for common TWC patterns
+        twc_patterns = [
+            "TWC_DOWN",
+            "TWC_STOP",
+            "TWC_UP",
+            "TWC DOWN",
+            "TWC STOP",
+            "TWC UP",
+            "TWC-UP",
+            "TWC-DOWN",
+            "TWC-STOP",
+        ]
+        return any(pattern in name for pattern in twc_patterns)
+
+    def _get_zone_from_scene(self) -> str | None:
+        """Extract zone (Jour/Nuit or Day/Night) from scene name, grpAct, or epAct.
+        
+        Returns translation key: "day" or "night" (not the translated string).
+        """
+        # Use cache if available
+        if self._cached_zone is not None:
+            return self._cached_zone
+
+        zone = None
+        # Priority 1: Analyze scene name
+        name = self._device.device_name.upper()
+        # Detect French and English patterns
+        day_patterns = ["JOUR", "DAY", " J ", "_J_", "-J-"]
+        night_patterns = ["NUIT", "NIGHT", " N ", "_N_", "-N-"]
+        
+        # Check for day patterns (but not if night is also present)
+        if any(pattern in name for pattern in day_patterns) and not any(
+            pattern in name for pattern in night_patterns
+        ):
+            zone = "day"
+        # Check for night patterns
+        elif any(pattern in name for pattern in night_patterns):
+            zone = "night"
+
+        # Priority 2: Analyze grpAct if zone not found
+        if zone is None:
+            grp_act = getattr(self._device, "grpAct", None)
+            if grp_act and isinstance(grp_act, list):
+                for group in grp_act:
+                    if isinstance(group, dict):
+                        group_id = group.get("id")
+                        if group_id:
+                            # Try to get group name from groups_data first
+                            group_id_str = str(group_id)
+                            group_info = groups_data.get(group_id_str, {})
+                            group_name = group_info.get("name", "").upper()
+                            
+                            # Fallback to device_name if not in groups_data
+                            if not group_name:
+                                group_name = device_name.get(group_id_str, "").upper()
+                            
+                            if any(pattern in group_name for pattern in day_patterns):
+                                zone = "day"
+                                break
+                            if any(pattern in group_name for pattern in night_patterns):
+                                zone = "night"
+                                break
+
+        # Priority 3: Analyze epAct if zone still not found
+        if zone is None:
+            ep_act = getattr(self._device, "epAct", None)
+            if ep_act and isinstance(ep_act, list):
+                for endpoint in ep_act:
+                    if isinstance(endpoint, dict):
+                        dev_id = endpoint.get("devId")
+                        ep_id = endpoint.get("epId")
+                        
+                        # Try to find device name
+                        device_id_str = None
+                        if ep_id and dev_id:
+                            if ep_id == dev_id:
+                                device_id_str = str(ep_id)
+                            else:
+                                device_id_str = f"{ep_id}_{dev_id}"
+                        elif ep_id:
+                            device_id_str = str(ep_id)
+                        elif dev_id:
+                            device_id_str = str(dev_id)
+                        
+                        if device_id_str:
+                            endpoint_name = device_name.get(device_id_str, "").upper()
+                            if any(pattern in endpoint_name for pattern in day_patterns):
+                                zone = "day"
+                                break
+                            if any(pattern in endpoint_name for pattern in night_patterns):
+                                zone = "night"
+                                break
+
+        # Cache result
+        self._cached_zone = zone
+        return zone
+
+    def _get_translated_zone_name(self, zone_key: str | None) -> str | None:
+        """Get translated zone name (Jour/Nuit or Day/Night)."""
+        if not zone_key:
+            return None
+        
+        # Simple translation dictionary based on hass language
+        if self.hass and hasattr(self.hass, "config"):
+            language = self.hass.config.language
+            if language.startswith("fr"):
+                return "Jour" if zone_key == "day" else "Nuit" if zone_key == "night" else None
+            else:
+                return "Day" if zone_key == "day" else "Night" if zone_key == "night" else None
+        
+        # Default French fallback
+        return "Jour" if zone_key == "day" else "Nuit" if zone_key == "night" else None
+
+    def _get_translated_device_name(self, device_key: str, zone_key: str | None = None) -> str:
+        """Get translated device name."""
+        # Simple translation dictionary based on hass language
+        if self.hass and hasattr(self.hass, "config"):
+            language = self.hass.config.language
+            if language.startswith("fr"):
+                if device_key == "tywell_control":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tywell Control {zone_name or ''}".strip()
+                elif device_key == "tydom_scenes":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Scènes Tydom {zone_name or ''}".strip() if zone_name else "Scènes Tydom"
+            else:
+                if device_key == "tywell_control":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tywell Control {zone_name or ''}".strip()
+                elif device_key == "tydom_scenes":
+                    zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+                    return f"Tydom Scenes {zone_name or ''}".strip() if zone_name else "Tydom Scenes"
+        
+        # Default French fallback
+        if device_key == "tywell_control":
+            zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+            return f"Tywell Control {zone_name or ''}".strip()
+        elif device_key == "tydom_scenes":
+            zone_name = self._get_translated_zone_name(zone_key) if zone_key else None
+            return f"Scènes Tydom {zone_name or ''}".strip() if zone_name else "Scènes Tydom"
+        return device_key
+
+    def _get_affected_device_ids(self) -> set[str]:
+        """Extract device IDs affected by this scene from grpAct and epAct.
+        
+        Returns a set of device IDs that are controlled by this scene.
+        Uses groups_data to resolve group IDs to device IDs.
+        """
+        # Use cache if available
+        if self._cached_affected_device_ids is not None:
+            return self._cached_affected_device_ids
+
+        affected_device_ids: set[str] = set()
+        
+        try:
+            hub_instance = self._get_hub()
+            if not hub_instance or not hasattr(hub_instance, "devices"):
+                self._cached_affected_device_ids = affected_device_ids
+                return affected_device_ids
+
+            grp_act = getattr(self._device, "grpAct", None)
+            ep_act = getattr(self._device, "epAct", None)
+
+            # Extract IDs from grpAct using groups_data
+            if grp_act and isinstance(grp_act, list):
+                for group in grp_act:
+                    if isinstance(group, dict):
+                        group_id = group.get("id")
+                        if group_id:
+                            group_id_str = str(group_id)
+                            
+                            # Resolve group ID to device IDs using groups_data
+                            if group_id_str in groups_data:
+                                group_info = groups_data[group_id_str]
+                                device_ids_from_group = group_info.get("devices", [])
+                                for device_id in device_ids_from_group:
+                                    # Verify the device exists in hub
+                                    if device_id in hub_instance.devices:
+                                        affected_device_ids.add(device_id)
+                                    else:
+                                        # Try to find the device with different formats
+                                        # Sometimes the device ID format might differ
+                                        for known_device_id in hub_instance.devices:
+                                            if device_id in known_device_id or known_device_id in device_id:
+                                                affected_device_ids.add(known_device_id)
+                                                break
+                                LOGGER.debug(
+                                    "Resolved group %s to %d device(s) for scene %s",
+                                    group_id_str,
+                                    len(device_ids_from_group),
+                                    self._device.device_id,
+                                )
+                            else:
+                                # Fallback: check if group ID is directly a device ID
+                                if group_id_str in hub_instance.devices:
+                                    affected_device_ids.add(group_id_str)
+                                else:
+                                    LOGGER.debug(
+                                        "Group %s not found in groups_data for scene %s",
+                                        group_id_str,
+                                        self._device.device_id,
+                                    )
+
+            # Extract IDs from epAct
+            # Format: {"devId": X, "epId": Y, "state": [...]}
+            # Device unique ID format: "{epId}_{devId}" or "epId" if epId == devId
+            if ep_act and isinstance(ep_act, list):
+                for endpoint in ep_act:
+                    if isinstance(endpoint, dict):
+                        dev_id = endpoint.get("devId")
+                        ep_id = endpoint.get("epId")
+                        
+                        # Priority order for device ID resolution:
+                        # 1. Format "{epId}_{devId}" if both exist and different
+                        # 2. Format "epId" if epId exists
+                        # 3. Format "devId" if devId exists
+                        # 4. Check in hub.devices for any match
+                        
+                        candidate_ids = []
+                        
+                        if ep_id and dev_id:
+                            if ep_id == dev_id:
+                                # Same ID, use epId format
+                                candidate_ids.append(str(ep_id))
+                            else:
+                                # Different IDs, try both formats
+                                candidate_ids.append(f"{ep_id}_{dev_id}")
+                                candidate_ids.append(str(ep_id))
+                                candidate_ids.append(str(dev_id))
+                        elif ep_id:
+                            candidate_ids.append(str(ep_id))
+                        elif dev_id:
+                            candidate_ids.append(str(dev_id))
+                        
+                        # Try each candidate ID
+                        found = False
+                        for candidate_id in candidate_ids:
+                            if candidate_id in hub_instance.devices:
+                                affected_device_ids.add(candidate_id)
+                                found = True
+                                LOGGER.debug(
+                                    "Resolved epAct endpoint (devId=%s, epId=%s) to device %s",
+                                    dev_id,
+                                    ep_id,
+                                    candidate_id,
+                                )
+                                break
+                        
+                        if not found and candidate_ids:
+                            # Last resort: try partial matches
+                            for known_device_id in hub_instance.devices:
+                                for candidate_id in candidate_ids:
+                                    if candidate_id in known_device_id or known_device_id in candidate_id:
+                                        affected_device_ids.add(known_device_id)
+                                        LOGGER.debug(
+                                            "Resolved epAct endpoint (devId=%s, epId=%s) to device %s (partial match)",
+                                            dev_id,
+                                            ep_id,
+                                            known_device_id,
+                                        )
+                                        found = True
+                                        break
+                                if found:
+                                    break
+
+            # Cache result
+            self._cached_affected_device_ids = affected_device_ids
+            LOGGER.debug(
+                "Scene %s affects %d device(s): %s",
+                self._device.device_id,
+                len(affected_device_ids),
+                list(affected_device_ids),
+            )
+            return affected_device_ids
+        except Exception as e:
+            LOGGER.warning(
+                "Error while extracting affected device IDs for scene %s: %s",
+                self._device.device_id,
+                e,
+                exc_info=True,
+            )
+            self._cached_affected_device_ids = set()
+            return set()
+
+    def _find_tywell_device(self, zone: str | None = None) -> str | None:
+        """Find Tywell Control device from grpAct/epAct.
+        
+        Args:
+            zone: Optional zone filter ("day" or "night") to narrow search.
+            
+        Returns:
+            Device ID of the Tywell Control device, or None if not found.
+        """
+        # Use cache if available
+        if self._cached_tywell_device_id is not None:
+            return self._cached_tywell_device_id
+
+        try:
+            hub_instance = self._get_hub()
+            if not hub_instance or not hasattr(hub_instance, "devices"):
+                return None
+
+            # Use the affected device IDs method
+            affected_device_ids = self._get_affected_device_ids()
+            
+            if not affected_device_ids:
+                LOGGER.debug(
+                    "No affected devices found for scene %s to search for Tywell Control",
+                    self._device.device_id,
+                )
+                return None
+
+            # Search for Tywell Control in affected devices
+            tywell_keywords = ["TYWELL", "CONTROL", "TYWELL CONTROL"]
+            
+            for device_id in affected_device_ids:
+                if device_id in hub_instance.devices:
+                    device = hub_instance.devices[device_id]
+                    
+                    # Check device name
+                    device_name_attr = (getattr(device, "device_name", "") or "").upper()
+                    # Check product name
+                    product_name = (getattr(device, "productName", "") or "").upper()
+                    # Check device type
+                    device_type_attr = (getattr(device, "device_type", "") or "").upper()
+                    
+                    # Check if it's a Tywell Control
+                    is_tywell = any(
+                        keyword in product_name
+                        or keyword in device_name_attr
+                        or keyword in device_type_attr
+                        for keyword in tywell_keywords
+                    )
+                    
+                    if is_tywell:
+                        # If zone filter is specified, verify device matches zone
+                        if zone:
+                            device_zone = self._get_zone_from_device(device)
+                            if device_zone != zone:
+                                LOGGER.debug(
+                                    "Tywell device %s zone (%s) doesn't match requested zone (%s)",
+                                    device_id,
+                                    device_zone,
+                                    zone,
+                                )
+                                continue
+                        
+                        # Cache result
+                        self._cached_tywell_device_id = device_id
+                        LOGGER.debug(
+                            "Found Tywell Control device %s for scene %s",
+                            device_id,
+                            self._device.device_id,
+                        )
+                        return device_id
+
+            LOGGER.debug(
+                "No Tywell Control device found in affected devices for scene %s",
+                self._device.device_id,
+            )
+            return None
+        except Exception as e:
+            LOGGER.warning(
+                "Error while searching for Tywell Control device for scene %s: %s",
+                self._device.device_id,
+                e,
+                exc_info=True,
+            )
+            return None
+
+    def _get_zone_from_device(self, device: TydomDevice) -> str | None:
+        """Extract zone from device name.
+        
+        Args:
+            device: The Tydom device to analyze.
+            
+        Returns:
+            Zone key ("day" or "night") or None.
+        """
+        device_name_attr = getattr(device, "device_name", "").upper()
+        day_patterns = ["JOUR", "DAY", " J ", "_J_", "-J-"]
+        night_patterns = ["NUIT", "NIGHT", " N ", "_N_", "-N-"]
+        
+        if any(pattern in device_name_attr for pattern in day_patterns):
+            return "day"
+        elif any(pattern in device_name_attr for pattern in night_patterns):
+            return "night"
+        
+        return None
 
     @property
     def icon(self) -> str:
@@ -2241,24 +2717,249 @@ class HAScene(Scene, HAEntity):
             if affected_endpoints:
                 attrs["affected_endpoints"] = affected_endpoints
 
+        # Add affected device IDs for reference
+        affected_device_ids = self._get_affected_device_ids()
+        if affected_device_ids:
+            attrs["affected_device_ids"] = list(affected_device_ids)
+            
+            # Also add device names if available
+            hub_instance = self._get_hub()
+            if hub_instance and hasattr(hub_instance, "devices"):
+                affected_device_names = []
+                for device_id in affected_device_ids:
+                    if device_id in hub_instance.devices:
+                        device = hub_instance.devices[device_id]
+                        device_name_attr = getattr(device, "device_name", None)
+                        if device_name_attr:
+                            affected_device_names.append(device_name_attr)
+                        elif hasattr(device, "productName"):
+                            product_name = getattr(device, "productName", None)
+                            if product_name:
+                                affected_device_names.append(str(product_name))
+                if affected_device_names:
+                    attrs["affected_device_names"] = affected_device_names
+        
+        # Add related entity IDs for scene configuration
+        # This allows Home Assistant to know which entities are controlled by this scene
+        if hasattr(self, '_related_entity_ids') and self._related_entity_ids:
+            attrs["entity_id"] = self._related_entity_ids
+            attrs["entities"] = self._related_entity_ids
+
         return attrs
 
     @property
-    def device_info(self) -> DeviceInfo:
-        """Return information to link this entity with the correct device."""
-        device_info = self._get_device_info()
-        info: DeviceInfo = {
-            "identifiers": {(DOMAIN, self._device.device_id)},
-            "name": self._device.device_name,
-            "manufacturer": device_info["manufacturer"],
-        }
-        if "model" in device_info:
-            info["model"] = device_info["model"]
-        return self._enrich_device_info(info)
+    def device_info(self) -> DeviceInfo | None:
+        """Return information to link this entity with the correct device.
+        
+        Scenes should not have their own device - they are associated with the gateway.
+        Return None to prevent creating a separate device for each scene.
+        """
+        # Scenes should not appear as separate devices in Home Assistant
+        # They are entities that belong to the Tydom gateway
+        # Return None to prevent device creation
+        return None
+
+    async def async_added_to_hass(self) -> None:
+        """Run when this Entity has been added to HA."""
+        # Call parent method
+        await super().async_added_to_hass()
+        
+        # Update name with translated zone if it's a TWC scene
+        if self._is_twc_scene():
+            zone_key = self._get_zone_from_scene()
+            if zone_key:
+                # Check if zone is already in the name (French or English)
+                base_name_upper = (self._base_name or "").upper()
+                zone_already_present = (
+                    "JOUR" in base_name_upper or "NUIT" in base_name_upper
+                    or "DAY" in base_name_upper or "NIGHT" in base_name_upper
+                    or " J " in base_name_upper or " N " in base_name_upper
+                )
+                if not zone_already_present:
+                    zone_name = self._get_translated_zone_name(zone_key)
+                    if zone_name:
+                        self._attr_name = f"{self._base_name} - {zone_name}"
+        
+        # Create relations between this scene and the devices it affects
+        await self._create_scene_device_relations()
+
+    def _invalidate_caches(self) -> None:
+        """Invalidate cached data when device is updated."""
+        self._cached_affected_device_ids = None
+        self._cached_tywell_device_id = None
+        self._cached_zone = None
+        LOGGER.debug("Invalidated caches for scene %s", self._device.device_id)
+
+    async def async_device_update(self, device: TydomScene) -> None:
+        """Handle device update for scene.
+        
+        This method is called when the scene device is updated.
+        It invalidates caches and recreates relations if grpAct/epAct changed.
+        """
+        old_grp_act = getattr(self._device, "grpAct", None)
+        old_ep_act = getattr(self._device, "epAct", None)
+        old_name = getattr(self._device, "device_name", None)
+        
+        # Invalidate caches
+        self._invalidate_caches()
+        
+        # Check if grpAct or epAct changed
+        new_grp_act = getattr(device, "grpAct", None)
+        new_ep_act = getattr(device, "epAct", None)
+        new_name = getattr(device, "device_name", None)
+        
+        grp_act_changed = old_grp_act != new_grp_act
+        ep_act_changed = old_ep_act != new_ep_act
+        name_changed = old_name != new_name
+        
+        if grp_act_changed or ep_act_changed:
+            LOGGER.debug(
+                "Scene %s grpAct/epAct changed, recreating relations",
+                self._device.device_id,
+            )
+            # Recreate relations with affected devices
+            await self._create_scene_device_relations()
+        
+        if name_changed:
+            LOGGER.debug(
+                "Scene %s name changed from '%s' to '%s'",
+                self._device.device_id,
+                old_name,
+                new_name,
+            )
+            # Update base name and recalculate zone
+            self._base_name = new_name
+            if self._is_twc_scene():
+                zone_key = self._get_zone_from_scene()
+                if zone_key:
+                    zone_name = self._get_translated_zone_name(zone_key)
+                    if zone_name:
+                        self._attr_name = f"{self._base_name} - {zone_name}"
+                    else:
+                        self._attr_name = self._base_name
+                else:
+                    self._attr_name = self._base_name
+            else:
+                self._attr_name = self._base_name
+
+    async def _create_scene_device_relations(self) -> None:
+        """Create relations between this scene and the devices it affects.
+        
+        This allows Home Assistant to display scenes on the devices they control.
+        Stores entity IDs for scene configuration.
+        """
+        try:
+            from homeassistant.helpers import device_registry as dr
+            from homeassistant.helpers import entity_registry as er
+            
+            # Get device and entity registries
+            device_registry = dr.async_get(self.hass)
+            entity_registry = er.async_get(self.hass)
+            
+            # Get affected device IDs
+            affected_device_ids = self._get_affected_device_ids()
+            if not affected_device_ids:
+                LOGGER.debug(
+                    "Scene %s has no affected devices",
+                    self._device.device_id,
+                )
+                return
+            
+            # Get the scene entity entry
+            scene_entity_id = self.entity_id
+            if not scene_entity_id:
+                # Entity not yet registered, skip for now
+                LOGGER.debug(
+                    "Scene entity %s not yet registered, relations will be created later",
+                    self._device.device_id,
+                )
+                return
+            
+            scene_entity_entry = entity_registry.async_get(scene_entity_id)
+            if not scene_entity_entry:
+                LOGGER.debug(
+                    "Scene entity entry not found for %s",
+                    scene_entity_id,
+                )
+                return
+            
+            # Find entities for each affected device
+            related_entities = []
+            found_devices = []
+            
+            for affected_device_id in affected_device_ids:
+                # Find the device in the registry
+                device_entry = device_registry.async_get_device(
+                    identifiers={(DOMAIN, affected_device_id)}
+                )
+                
+                if not device_entry:
+                    continue
+                
+                found_devices.append(affected_device_id)
+                
+                # Find all entities associated with this device
+                device_entities = er.async_entries_for_device(
+                    entity_registry, device_entry.id
+                )
+                
+                for entity_entry in device_entities:
+                    # Skip the scene entity itself
+                    if entity_entry.entity_id == scene_entity_id:
+                        continue
+                    
+                    related_entities.append(entity_entry.entity_id)
+                    
+                    LOGGER.debug(
+                        "Scene %s controls entity %s (device %s)",
+                        self._device.device_id,
+                        entity_entry.entity_id,
+                        affected_device_id,
+                    )
+            
+            # Store related entities for scene configuration
+            if related_entities:
+                # Store in a cache that can be accessed by extra_state_attributes
+                if not hasattr(self, '_related_entity_ids'):
+                    self._related_entity_ids = []
+                self._related_entity_ids = related_entities
+                
+                LOGGER.info(
+                    "Scene %s (%s) is linked to %d device(s) with %d related entity/ies: %s",
+                    self._device.device_id,
+                    self._base_name,
+                    len(found_devices),
+                    len(related_entities),
+                    found_devices,
+                )
+            else:
+                LOGGER.debug(
+                    "Scene %s references %d device(s) but none found in registry yet",
+                    self._device.device_id,
+                    len(affected_device_ids),
+                )
+        except Exception as e:
+            LOGGER.warning(
+                "Error creating scene-device relations for scene %s: %s",
+                self._device.device_id,
+                e,
+                exc_info=True,
+            )
 
     async def async_activate(self, **kwargs: Any) -> None:
-        """Activate the scene."""
-        await self._device.activate()
+        """Activate the scene.
+        
+        Raises:
+            HomeAssistantError: If activation fails.
+        """
+        try:
+            await self._device.activate()
+        except Exception as e:
+            from homeassistant.exceptions import HomeAssistantError
+            scene_name = getattr(self._device, "device_name", "Unknown")
+            raise HomeAssistantError(
+                f"Failed to activate scene '{scene_name}': {str(e)}"
+            ) from e
 
 
 class HASwitch(SwitchEntity, HAEntity):
@@ -2302,6 +3003,14 @@ class HASwitch(SwitchEntity, HAEntity):
             state = getattr(self._device, "state", None)
             return state == "ON" if state is not None else False
         return False
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the switch based on state."""
+        if self.is_on:
+            return "mdi:toggle-switch"
+        else:
+            return "mdi:toggle-switch-off"
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -2385,6 +3094,31 @@ class HAButton(ButtonEntity, HAEntity):
             await self._device._tydom_client.put_devices_data(
                 self._device._id, self._device._endpoint, self._action_method, "ON"
             )
+
+
+class HAReloadButton(ButtonEntity):
+    """Button entity for reloading all devices."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:reload"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, hub, hass) -> None:
+        """Initialize HAReloadButton."""
+        self.hass = hass
+        self._hub = hub
+        self._attr_unique_id = f"{hub.hub_id}_reload_devices"
+        self._attr_name = "Recharger les appareils"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, hub.hub_id)},
+            name=hub._name,
+            manufacturer=hub.manufacturer,
+        )
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self._hub.reload_devices()
 
 
 class HANumber(NumberEntity, HAEntity):

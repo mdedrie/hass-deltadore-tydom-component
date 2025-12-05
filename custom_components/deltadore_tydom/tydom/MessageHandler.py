@@ -45,6 +45,7 @@ device_endpoint = {}
 device_type = {}
 device_metadata = {}
 scenario_metadata = {}  # Store scenario metadata from /configs/file
+groups_data = {}  # Store groups data: {group_id: {"devices": [device_ids], "name": group_name}}
 
 
 class Reply(TypedDict):
@@ -919,13 +920,57 @@ class MessageHandler:
     async def parse_groups_file(self, parsed, transaction_id):
         """Parse groups file."""
         LOGGER.debug("parse_groups_file : %s", parsed)
-        # Groups are currently not exposed as entities, but we parse them for future use
-        # Store groups data in a way that can be accessed later if needed
+        # Store groups data for resolving grpAct in scenarios
         if parsed and isinstance(parsed, dict):
             groups = parsed.get("groups", [])
-            LOGGER.debug(
-                "Found %d groups", len(groups) if isinstance(groups, list) else 0
-            )
+            if isinstance(groups, list):
+                for group in groups:
+                    if isinstance(group, dict) and "id" in group:
+                        group_id = group.get("id")
+                        group_id_str = str(group_id)
+                        
+                        # Extract device IDs from the group
+                        device_ids = []
+                        devices = group.get("devices", [])
+                        if isinstance(devices, list):
+                            for device in devices:
+                                if isinstance(device, dict):
+                                    # Get device ID
+                                    dev_id = device.get("id")
+                                    if dev_id:
+                                        device_ids.append(str(dev_id))
+                                    
+                                    # Also get endpoint IDs as they might be used as device IDs
+                                    endpoints = device.get("endpoints", [])
+                                    if isinstance(endpoints, list):
+                                        for endpoint in endpoints:
+                                            if isinstance(endpoint, dict):
+                                                ep_id = endpoint.get("id")
+                                                if ep_id:
+                                                    ep_id_str = str(ep_id)
+                                                    # Try format epId_devId if dev_id exists
+                                                    if dev_id:
+                                                        unique_id = f"{ep_id_str}_{dev_id}"
+                                                        if unique_id not in device_ids:
+                                                            device_ids.append(unique_id)
+                                                    # Also add epId alone
+                                                    if ep_id_str not in device_ids:
+                                                        device_ids.append(ep_id_str)
+                        
+                        # Store group data
+                        groups_data[group_id_str] = {
+                            "devices": device_ids,
+                            "name": group.get("name", f"Group {group_id}"),
+                        }
+                        LOGGER.debug(
+                            "Stored group %s (%s) with %d device(s)",
+                            group_id_str,
+                            groups_data[group_id_str]["name"],
+                            len(device_ids),
+                        )
+                LOGGER.debug(
+                    "Found and stored %d groups", len(groups) if isinstance(groups, list) else 0
+                )
         return []
 
     async def parse_moments_file(self, parsed, transaction_id):
