@@ -25,6 +25,8 @@ from .tydom.tydom_devices import (
     TydomThermo,
     TydomDevice,
     TydomScene,
+    TydomGroup,
+    TydomMoment,
 )
 from .ha_entities import (
     HATydom,
@@ -45,9 +47,11 @@ from .ha_entities import (
     HAScene,
     HASwitch,
     HAReloadButton,
+    HAGroup,
+    HAMoment,
 )
 
-from .const import LOGGER
+from .const import LOGGER, get_polling_interval_for_validity
 
 
 class Hub:
@@ -186,6 +190,9 @@ class Hub:
         while not self.ready():
             await asyncio.sleep(1)
         LOGGER.debug("Listen to tydom events")
+        
+        # Validate data consistency after initial setup
+        await self._validate_data_consistency()
         while True:
             devices = await self._tydom_client.consume_messages()
             if devices is not None:
@@ -401,6 +408,18 @@ class Hub:
                 self.ha_devices[device.device_id] = ha_device
                 if self.add_scene_callback is not None:
                     self.add_scene_callback([ha_device])
+            case TydomGroup():
+                LOGGER.debug("Create group %s", device.device_id)
+                ha_device = HAGroup(device, self._hass)
+                self.ha_devices[device.device_id] = ha_device
+                if self.add_button_callback is not None:
+                    self.add_button_callback([ha_device])
+            case TydomMoment():
+                LOGGER.debug("Create moment %s", device.device_id)
+                ha_device = HAMoment(device, self._hass)
+                self.ha_devices[device.device_id] = ha_device
+                if self.add_switch_callback is not None:
+                    self.add_switch_callback([ha_device])
             case TydomDevice():
                 LOGGER.debug("Create generic sensor %s", device.device_id)
                 ha_device = HASensor(device, self._hass)
@@ -507,13 +526,65 @@ class Hub:
             await asyncio.sleep(1)
 
     async def refresh_data(self) -> None:
-        """Periodically refresh data for devices which don't do push."""
+        """Periodically refresh data for devices which don't do push.
+        
+        Uses adaptive polling based on validity metadata:
+        - INFINITE/upToDate: No polling needed
+        - ES_SUPERVISION: Poll every 5 minutes
+        - SENSOR_SUPERVISION: Poll every 1 minute
+        - SYNCHRO_SUPERVISION: Poll every 30 seconds
+        """
+        # Group devices by polling interval based on validity
+        polling_groups: dict[int, list] = {}
+        
         while True:
-            if self._refresh_interval > 0:
-                await self._tydom_client.poll_devices_data_5m()
-                await asyncio.sleep(self._refresh_interval)
+            # Rebuild polling groups periodically (every 5 minutes)
+            polling_groups = {}
+            
+            for device_id, device in self.devices.items():
+                if not hasattr(device, "_metadata") or device._metadata is None:
+                    continue
+                
+                # Check all attributes in metadata for validity
+                for attr_name, attr_metadata in device._metadata.items():
+                    if not isinstance(attr_metadata, dict):
+                        continue
+                    
+                    validity = attr_metadata.get("validity")
+                    polling_interval = get_polling_interval_for_validity(validity)
+                    
+                    if polling_interval is not None:
+                        if polling_interval not in polling_groups:
+                            polling_groups[polling_interval] = []
+                        polling_groups[polling_interval].append((device_id, attr_name))
+            
+            # Poll devices according to their intervals
+            if polling_groups:
+                # Sort intervals from shortest to longest
+                sorted_intervals = sorted(polling_groups.keys())
+                shortest_interval = sorted_intervals[0]
+                
+                # Poll devices that need the shortest interval
+                for device_id, attr_name in polling_groups[shortest_interval]:
+                    if device_id in self.devices:
+                        device = self.devices[device_id]
+                        if hasattr(device, "_tydom_client"):
+                            try:
+                                await device._tydom_client.poll_device_data(device_id)
+                            except Exception as e:
+                                LOGGER.warning(
+                                    "Error polling device %s: %s", device_id, e
+                                )
+                
+                # Sleep for the shortest interval
+                await asyncio.sleep(shortest_interval)
             else:
-                await asyncio.sleep(60)
+                # No devices need polling, use default refresh interval
+                if self._refresh_interval > 0:
+                    await self._tydom_client.poll_devices_data_5m()
+                    await asyncio.sleep(self._refresh_interval)
+                else:
+                    await asyncio.sleep(60)
 
     async def reload_devices(self) -> None:
         """Recharger tous les appareils et entités comme au démarrage initial.
@@ -567,3 +638,91 @@ class Hub:
             LOGGER.debug("Bouton de rechargement recréé après le rechargement")
         
         LOGGER.info("Rechargement terminé, les nouveaux appareils seront découverts automatiquement")
+        
+        # Validate data consistency after reload
+        await self._validate_data_consistency()
+
+    async def _validate_data_consistency(self) -> None:
+        """Validate data consistency: check that devices in groups exist, scenarios reference valid devices."""
+        LOGGER.debug("Validating data consistency...")
+        
+        issues = []
+        
+        # Check groups: verify that all device IDs in groups exist
+        for device_id, device in self.devices.items():
+            if isinstance(device, TydomGroup):
+                for group_device_id in device.device_ids:
+                    if group_device_id not in self.devices:
+                        # Try to find by various ID formats
+                        found = False
+                        for _id, _device in self.devices.items():
+                            if (
+                                _id == group_device_id
+                                or str(getattr(_device, "device_id", "")) == group_device_id
+                                or str(getattr(_device, "_id", "")) == group_device_id
+                            ):
+                                found = True
+                                break
+                        
+                        if not found:
+                            issues.append(
+                                f"Group {device.device_name} ({device_id}) references non-existent device: {group_device_id}"
+                            )
+        
+        # Check scenarios: verify that grpAct and epAct reference valid devices/groups
+        for device_id, device in self.devices.items():
+            if isinstance(device, TydomScene):
+                # Check grpAct
+                grp_act = getattr(device, "grpAct", None)
+                if grp_act and isinstance(grp_act, list):
+                    for grp_action in grp_act:
+                        if isinstance(grp_action, dict):
+                            grp_id = grp_action.get("id")
+                            if grp_id:
+                                grp_id_str = str(grp_id)
+                                # Check if group exists
+                                group_found = False
+                                for _id, _device in self.devices.items():
+                                    if isinstance(_device, TydomGroup) and _device.group_id == grp_id_str:
+                                        group_found = True
+                                        break
+                                
+                                if not group_found:
+                                    issues.append(
+                                        f"Scene {device.device_name} ({device_id}) references non-existent group: {grp_id_str}"
+                                    )
+                
+                # Check epAct
+                ep_act = getattr(device, "epAct", None)
+                if ep_act and isinstance(ep_act, list):
+                    for ep_action in ep_act:
+                        if isinstance(ep_action, dict):
+                            ep_id = ep_action.get("id")
+                            if ep_id:
+                                ep_id_str = str(ep_id)
+                                # Check if device/endpoint exists
+                                device_found = False
+                                for _id, _device in self.devices.items():
+                                    if (
+                                        _id == ep_id_str
+                                        or str(getattr(_device, "device_id", "")) == ep_id_str
+                                        or str(getattr(_device, "_id", "")) == ep_id_str
+                                    ):
+                                        device_found = True
+                                        break
+                                
+                                if not device_found:
+                                    issues.append(
+                                        f"Scene {device.device_name} ({device_id}) references non-existent device/endpoint: {ep_id_str}"
+                                    )
+        
+        # Log issues
+        if issues:
+            LOGGER.warning(
+                "Found %d data consistency issue(s):",
+                len(issues),
+            )
+            for issue in issues:
+                LOGGER.warning("  - %s", issue)
+        else:
+            LOGGER.debug("Data consistency validation passed: no issues found")

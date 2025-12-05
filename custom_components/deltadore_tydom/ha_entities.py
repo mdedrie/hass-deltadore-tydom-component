@@ -94,9 +94,11 @@ from .tydom.tydom_devices import (
     TydomWater,
     TydomThermo,
     TydomScene,
+    TydomGroup,
+    TydomMoment,
 )
 
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, TYDOM_UNIT_TO_HA_UNIT
 from .tydom.MessageHandler import device_name, groups_data
 
 
@@ -385,6 +387,29 @@ class GenericSensor(SensorEntity):
             value = ranged_value_to_percentage((min, max), value)
         return value
 
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the native unit of measurement.
+        
+        Uses unit from metadata if available, otherwise falls back to
+        the unit set during initialization.
+        """
+        # First try to get unit from metadata
+        if (
+            self._device._metadata is not None
+            and self._attribute in self._device._metadata
+        ):
+            metadata = self._device._metadata[self._attribute]
+            if "unit" in metadata:
+                tydom_unit = metadata["unit"]
+                # Map Tydom unit to Home Assistant unit
+                ha_unit = TYDOM_UNIT_TO_HA_UNIT.get(tydom_unit, tydom_unit)
+                if ha_unit:
+                    return ha_unit
+        
+        # Fall back to the unit set during initialization
+        return self._attr_native_unit_of_measurement
+
     def _get_device_info_dict(self) -> dict[str, str]:
         """Get device info as dict (helper for GenericSensor)."""
         info: dict[str, str] = {}
@@ -662,6 +687,310 @@ class GenericBinarySensor(BinarySensorBase):
         return getattr(self._device, self._attribute, False)
 
 
+class ClockSensor(SensorEntity):
+    """Sensor for clock/timezone data from Tydom gateway."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        device: Tydom,
+        attribute: str,
+        hass: Any,
+    ):
+        """Initialize clock sensor.
+        
+        Args:
+            device: Tydom gateway device
+            attribute: Attribute name (clock, source, timezone, summerOffset)
+            hass: Home Assistant instance
+        """
+        self.hass = hass
+        self._device = device
+        self._attribute = attribute
+        self._attr_unique_id = f"{self._device.device_id}_clock_{attribute}"
+        
+        # Set appropriate name and device class
+        if attribute == "clock":
+            self._attr_name = "Gateway Time"
+            self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        elif attribute == "source":
+            self._attr_name = "Clock Source"
+        elif attribute == "timezone":
+            self._attr_name = "Timezone"
+        elif attribute == "summerOffset":
+            self._attr_name = "Summer Offset"
+        else:
+            self._attr_name = attribute.title()
+        
+        # Create entity description
+        entity_description = SensorEntityDescription(
+            key=f"clock_{attribute}",
+            name=self._attr_name,
+            device_class=self._attr_device_class if attribute == "clock" else None,
+            translation_key=f"clock_{attribute}",
+        )
+        self.entity_description = entity_description
+
+    @property
+    def native_value(self) -> str | int | None:
+        """Return the clock value."""
+        if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
+            value = self._device.clock.get(self._attribute)
+            if value is not None:
+                if self._attribute == "clock":
+                    # Return ISO format timestamp
+                    return str(value)
+                elif self._attribute == "timezone":
+                    # Return timezone offset in minutes
+                    try:
+                        return int(value)
+                    except (ValueError, TypeError):
+                        return None
+                else:
+                    return str(value)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        attrs = {}
+        if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
+            clock = self._device.clock
+            if "source" in clock:
+                attrs["source"] = clock["source"]
+            if "timezone" in clock:
+                attrs["timezone"] = clock["timezone"]
+            if "summerOffset" in clock:
+                attrs["summer_offset"] = clock["summerOffset"]
+        return attrs
+
+    def _get_hub(self):
+        """Get the hub instance from hass data."""
+        if not hasattr(self, "hass") or self.hass is None:
+            return None
+        if DOMAIN not in self.hass.data:
+            return None
+        hubs = self.hass.data[DOMAIN]
+        if not hubs:
+            return None
+        return next(iter(hubs.values()))
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return information to link this entity with the gateway device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.device_id)},
+            "name": self._device.device_name,
+            "manufacturer": "Delta Dore",
+            "model": getattr(self._device, "productName", "Tydom Gateway"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return True if hub is available."""
+        if self._device is None:
+            return False
+        if hasattr(self, "hass") and self.hass is not None:
+            if DOMAIN in self.hass.data:
+                hubs = self.hass.data[DOMAIN]
+                if hubs:
+                    hub = next(iter(hubs.values()))
+                    if not getattr(hub, "online", False):
+                        return False
+        return True
+
+    async def async_added_to_hass(self):
+        """Run when this Entity has been added to HA."""
+        self._device.register_callback(self.async_write_ha_state)
+
+    async def async_will_remove_from_hass(self):
+        """Entity being removed from hass."""
+        self._device.remove_callback(self.async_write_ha_state)
+
+
+class GeolocationSensor(SensorEntity):
+    """Sensor for geolocation data from Tydom gateway."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        device: Tydom,
+        attribute: str,
+        hass: Any,
+    ):
+        """Initialize geolocation sensor.
+        
+        Args:
+            device: Tydom gateway device
+            attribute: Attribute name (longitude or latitude)
+            hass: Home Assistant instance
+        """
+        self.hass = hass
+        self._device = device
+        self._attribute = attribute
+        self._attr_unique_id = f"{self._device.device_id}_geoloc_{attribute}"
+        self._attr_name = attribute.title()
+        
+        # Create entity description
+        entity_description = SensorEntityDescription(
+            key=f"geoloc_{attribute}",
+            name=attribute.title(),
+            translation_key=f"geoloc_{attribute}",
+        )
+        self.entity_description = entity_description
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the geolocation value."""
+        if hasattr(self._device, "geoloc") and isinstance(self._device.geoloc, dict):
+            value = self._device.geoloc.get(self._attribute)
+            if value is not None:
+                # Tydom returns coordinates in a special format (e.g., -1895574 for longitude)
+                # These need to be divided by 100000 to get actual degrees
+                try:
+                    return float(value) / 100000.0
+                except (ValueError, TypeError):
+                    return None
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        attrs = {}
+        if hasattr(self._device, "geoloc") and isinstance(self._device.geoloc, dict):
+            geoloc = self._device.geoloc
+            if "longitude" in geoloc:
+                attrs["raw_longitude"] = geoloc["longitude"]
+            if "latitude" in geoloc:
+                attrs["raw_latitude"] = geoloc["latitude"]
+        return attrs
+
+    def _get_hub(self):
+        """Get the hub instance from hass data."""
+        if not hasattr(self, "hass") or self.hass is None:
+            return None
+        if DOMAIN not in self.hass.data:
+            return None
+        hubs = self.hass.data[DOMAIN]
+        if not hubs:
+            return None
+        return next(iter(hubs.values()))
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return information to link this entity with the gateway device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.device_id)},
+            "name": self._device.device_name,
+            "manufacturer": "Delta Dore",
+            "model": getattr(self._device, "productName", "Tydom Gateway"),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return True if hub is available."""
+        if self._device is None:
+            return False
+        if hasattr(self, "hass") and self.hass is not None:
+            if DOMAIN in self.hass.data:
+                hubs = self.hass.data[DOMAIN]
+                if hubs:
+                    hub = next(iter(hubs.values()))
+                    if not getattr(hub, "online", False):
+                        return False
+        return True
+
+    async def async_added_to_hass(self):
+        """Run when this Entity has been added to HA."""
+        self._device.register_callback(self.async_write_ha_state)
+
+    async def async_will_remove_from_hass(self):
+        """Entity being removed from hass."""
+        self._device.remove_callback(self.async_write_ha_state)
+
+
+class ProtocolBinarySensor(BinarySensorBase):
+    """Binary sensor for a Tydom protocol status."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        device: Tydom,
+        protocol_name: str,
+        protocol_data: dict,
+        attribute: str,
+        hass: Any,
+    ):
+        """Initialize protocol binary sensor.
+        
+        Args:
+            device: Tydom gateway device
+            protocol_name: Name of the protocol (e.g., "X3D", "ZIGBEE")
+            protocol_data: Protocol data dict from /info message
+            attribute: Attribute to monitor (available, installed, ready, status)
+            hass: Home Assistant instance
+        """
+        super().__init__(device)
+        self.hass = hass
+        self._device = device
+        self._protocol_name = protocol_name
+        self._protocol_data = protocol_data
+        self._attribute = attribute
+        self._attr_unique_id = f"{self._device.device_id}_protocol_{protocol_name.lower()}_{attribute}"
+        self._attr_name = f"{protocol_name} {attribute.title()}"
+        self._attr_device_class = None
+        
+        # Create entity description
+        entity_description = BinarySensorEntityDescription(
+            key=f"protocol_{protocol_name.lower()}_{attribute}",
+            name=f"{protocol_name} {attribute.title()}",
+            translation_key=f"protocol_{protocol_name.lower()}_{attribute}",
+        )
+        self.entity_description = entity_description
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if protocol attribute is active."""
+        value = self._protocol_data.get(self._attribute, False)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            # For status, check if it's "running" or "idle"
+            return value.lower() in ("running", "idle", "on", "true", "yes", "1")
+        return bool(value)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        attrs = {
+            "protocol": self._protocol_name,
+            "available": self._protocol_data.get("available", False),
+            "installed": self._protocol_data.get("installed", False),
+            "ready": self._protocol_data.get("ready", False),
+            "status": self._protocol_data.get("status", "unknown"),
+            "install_status": self._protocol_data.get("installStatus", "unknown"),
+        }
+        return attrs
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return information to link this entity with the gateway device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.device_id)},
+            "name": self._device.device_name,
+            "manufacturer": "Delta Dore",
+            "model": getattr(self._device, "productName", "Tydom Gateway"),
+        }
+
+
 class HATydom(UpdateEntity, HAEntity):
     """Representation of a Tydom Gateway."""
 
@@ -678,6 +1007,14 @@ class HATydom(UpdateEntity, HAEntity):
     _attr_icon = "mdi:update"
 
     sensor_classes = {"update_available": BinarySensorDeviceClass.UPDATE}
+    
+    # Binary sensor classes for system status
+    binary_sensor_classes = {
+        "bddEmpty": BinarySensorDeviceClass.PROBLEM,
+        "apiMode": None,  # No specific device class
+        "pltRegistered": None,
+        "passwordEmpty": BinarySensorDeviceClass.PROBLEM,
+    }
 
     filtered_attrs = [
         "absence.json",
@@ -699,6 +1036,13 @@ class HATydom(UpdateEntity, HAEntity):
         "site.json",
         "trigger.json",
         "TYDOM.dat",
+        "protocols",  # Filter protocols list, we create separate sensors
+        "geoloc",  # Filter geoloc dict, we create separate sensors
+        "clock",  # Filter clock dict, we create separate sensors
+        "maintenance",  # Filter maintenance dict
+        "moments",  # Filter moments dict
+        "local_claim",  # Filter local_claim dict
+        "weather",  # Filter weather dict
     ]
 
     def __init__(self, device: Tydom, hass) -> None:
@@ -730,8 +1074,62 @@ class HATydom(UpdateEntity, HAEntity):
             info["sw_version"] = str(self._device.mainVersionSW)
         if "model" in device_info:
             info["model"] = device_info["model"]
+        
+        # Add MAC address if available
+        if hasattr(self._device, "mac") and self._device.mac:
+            info["connections"] = {("mac", str(self._device.mac))}
+        
         # Gateway doesn't need via_device (it's the root device)
         return info
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes for the gateway."""
+        attrs: dict[str, Any] = {}
+        
+        # MAC address
+        if hasattr(self._device, "mac") and self._device.mac:
+            attrs["mac_address"] = str(self._device.mac)
+        
+        # All versions
+        version_attrs = [
+            "mainVersionSW", "mainVersionHW", "keyVersionSW", "keyVersionHW",
+            "keyVersionStack", "zigbeeVersionSW", "javaVersion", "oryxVersion",
+            "bootVersion"
+        ]
+        for attr in version_attrs:
+            if hasattr(self._device, attr):
+                value = getattr(self._device, attr, None)
+                if value is not None:
+                    attrs[attr] = str(value)
+        
+        # References
+        if hasattr(self._device, "mainReference") and self._device.mainReference:
+            attrs["main_reference"] = str(self._device.mainReference)
+        if hasattr(self._device, "keyReference") and self._device.keyReference:
+            attrs["key_reference"] = str(self._device.keyReference)
+        if hasattr(self._device, "zigbeeReference") and self._device.zigbeeReference:
+            attrs["zigbee_reference"] = str(self._device.zigbeeReference)
+        if hasattr(self._device, "bootReference") and self._device.bootReference:
+            attrs["boot_reference"] = str(self._device.bootReference)
+        
+        # URL mediation
+        if hasattr(self._device, "urlMediation") and self._device.urlMediation:
+            attrs["mediation_url"] = str(self._device.urlMediation)
+        
+        # Maintenance info
+        if hasattr(self._device, "maintenance") and isinstance(self._device.maintenance, dict):
+            attrs["maintenance"] = self._device.maintenance
+        
+        # Config
+        if hasattr(self._device, "config") and self._device.config:
+            attrs["config"] = str(self._device.config)
+        
+        # Main ID
+        if hasattr(self._device, "mainId") and self._device.mainId:
+            attrs["main_id"] = str(self._device.mainId)
+        
+        return attrs
 
     @property
     def installed_version(self) -> str | None:
@@ -766,6 +1164,114 @@ class HATydom(UpdateEntity, HAEntity):
     ) -> None:
         """Install an update."""
         await self._device.async_trigger_firmware_update()
+
+    def get_sensors(self):
+        """Get available sensors for this entity, including protocol sensors."""
+        sensors = []
+        
+        # Get standard sensors from parent class
+        sensors.extend(super().get_sensors())
+        
+        # Add protocol binary sensors if protocols data is available
+        if hasattr(self._device, "protocols") and isinstance(self._device.protocols, list):
+            for protocol in self._device.protocols:
+                if isinstance(protocol, dict) and "protocol" in protocol:
+                    protocol_name = protocol.get("protocol", "UNKNOWN")
+                    
+                    # Create binary sensors for key protocol attributes
+                    for attr in ["available", "installed", "ready"]:
+                        if attr in protocol:
+                            protocol_sensor = ProtocolBinarySensor(
+                                self._device,
+                                protocol_name,
+                                protocol,
+                                attr,
+                                self.hass,
+                            )
+                            sensors.append(protocol_sensor)
+                            LOGGER.debug(
+                                "Created protocol sensor: %s.%s.%s",
+                                protocol_name,
+                                attr,
+                                self._device.device_id,
+                            )
+        
+        # Add geolocation sensors if geoloc data is available
+        if hasattr(self._device, "geoloc") and isinstance(self._device.geoloc, dict):
+            geoloc = self._device.geoloc
+            if "longitude" in geoloc:
+                longitude_sensor = GeolocationSensor(
+                    self._device,
+                    "longitude",
+                    self.hass,
+                )
+                sensors.append(longitude_sensor)
+                LOGGER.debug("Created geolocation longitude sensor")
+            
+            if "latitude" in geoloc:
+                latitude_sensor = GeolocationSensor(
+                    self._device,
+                    "latitude",
+                    self.hass,
+                )
+                sensors.append(latitude_sensor)
+                LOGGER.debug("Created geolocation latitude sensor")
+        
+        # Add clock sensors if clock data is available
+        if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
+            clock = self._device.clock
+            for attr in ["clock", "source", "timezone", "summerOffset"]:
+                if attr in clock:
+                    clock_sensor = ClockSensor(
+                        self._device,
+                        attr,
+                        self.hass,
+                    )
+                    sensors.append(clock_sensor)
+                    LOGGER.debug("Created clock sensor: %s", attr)
+        
+        # Add system status binary sensors and sensors
+        # These are created automatically by get_sensors() from parent class
+        # but we ensure they use the right device classes
+        status_attrs = {
+            "bddEmpty": BinarySensorDeviceClass.PROBLEM,
+            "apiMode": None,
+            "pltRegistered": None,
+            "passwordEmpty": BinarySensorDeviceClass.PROBLEM,
+        }
+        
+        for attr, device_class in status_attrs.items():
+            if hasattr(self._device, attr) and attr not in self._registered_sensors:
+                value = getattr(self._device, attr)
+                if isinstance(value, bool):
+                    # Create binary sensor
+                    binary_sensor = GenericBinarySensor(
+                        self._device,
+                        device_class,
+                        attr,
+                        attr,
+                    )
+                    binary_sensor.hass = self.hass
+                    sensors.append(binary_sensor)
+                    self._registered_sensors.append(attr)
+                    LOGGER.debug("Created system status binary sensor: %s", attr)
+        
+        # Add bddStatus as a regular sensor (it's numeric)
+        if hasattr(self._device, "bddStatus") and "bddStatus" not in self._registered_sensors:
+            bdd_status_sensor = GenericSensor(
+                self._device,
+                None,  # device_class
+                None,  # state_class
+                "bddStatus",
+                "bddStatus",
+                None,  # unit
+            )
+            bdd_status_sensor.hass = self.hass
+            sensors.append(bdd_status_sensor)
+            self._registered_sensors.append("bddStatus")
+            LOGGER.debug("Created system status sensor: bddStatus")
+        
+        return sensors
 
 
 class HAEnergy(SensorEntity, HAEntity):
@@ -999,7 +1505,132 @@ class HACover(CoverEntity, HAEntity):
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Set the cover's position."""
+        # Check if position is writable
+        if not self._is_attribute_writable("position"):
+            from homeassistant.exceptions import HomeAssistantError
+            raise HomeAssistantError("La position n'est pas modifiable pour ce device")
         await self._device.set_position(kwargs[ATTR_POSITION])
+    
+    def _is_attribute_writable(self, attribute_name: str) -> bool:
+        """Check if an attribute is writable based on metadata permissions."""
+        if not hasattr(self._device, "_metadata") or self._device._metadata is None:
+            return True  # Default to writable if no metadata
+        if attribute_name not in self._device._metadata:
+            return True  # Default to writable if attribute not in metadata
+        metadata = self._device._metadata[attribute_name]
+        permission = metadata.get("permission", "rw")
+        return "w" in permission.lower()
+    
+    def _is_attribute_readable(self, attribute_name: str) -> bool:
+        """Check if an attribute is readable based on metadata permissions."""
+        if not hasattr(self._device, "_metadata") or self._device._metadata is None:
+            return True  # Default to readable if no metadata
+        if attribute_name not in self._device._metadata:
+            return True  # Default to readable if attribute not in metadata
+        metadata = self._device._metadata[attribute_name]
+        permission = metadata.get("permission", "rw")
+        return "r" in permission.lower()
+    
+    def _get_permissions_for_attributes(self, attribute_names: list[str]) -> dict[str, dict[str, bool]]:
+        """Get permissions (readable/writable) for a list of attributes.
+        
+        Returns:
+            Dict mapping attribute names to permission dicts with 'readable' and 'writable' keys
+        """
+        permissions = {}
+        for attr_name in attribute_names:
+            permissions[attr_name] = {
+                "readable": self._is_attribute_readable(attr_name),
+                "writable": self._is_attribute_writable(attr_name),
+            }
+        return permissions
+    
+    def _get_controlled_by_scenes(self) -> list[dict[str, Any]]:
+        """Get list of scenes that control this device.
+        
+        Returns:
+            List of dicts with scene information (scene_id, scene_name, entity_id)
+        """
+        controlled_by = []
+        hub_instance = self._get_hub()
+        
+        if hub_instance and hasattr(hub_instance, "devices"):
+            device_id = getattr(self._device, "device_id", None)
+            if not device_id:
+                return controlled_by
+            
+            # Check all scenes to see if they control this device
+            for _id, device in hub_instance.devices.items():
+                if isinstance(device, TydomScene):
+                    affected_device_ids = self._get_scene_affected_device_ids(device)
+                    if device_id in affected_device_ids:
+                        scene_info = {
+                            "scene_id": getattr(device, "scene_id", None) or str(device.device_id),
+                            "scene_name": getattr(device, "device_name", "Unknown Scene"),
+                        }
+                        
+                        # Try to get entity_id
+                        if hasattr(hub_instance, "ha_devices") and device.device_id in hub_instance.ha_devices:
+                            ha_scene = hub_instance.ha_devices[device.device_id]
+                            if hasattr(ha_scene, "entity_id"):
+                                scene_info["entity_id"] = ha_scene.entity_id
+                        
+                        controlled_by.append(scene_info)
+        
+        return controlled_by
+    
+    def _get_scene_affected_device_ids(self, scene_device: TydomScene) -> set[str]:
+        """Get affected device IDs from a scene device.
+        
+        Args:
+            scene_device: TydomScene device
+            
+        Returns:
+            Set of device IDs affected by the scene
+        """
+        affected_ids = set()
+        
+        # Get grpAct
+        grp_act = getattr(scene_device, "grpAct", None)
+        if grp_act and isinstance(grp_act, list):
+            from .tydom.MessageHandler import groups_data
+            for grp_action in grp_act:
+                if isinstance(grp_action, dict):
+                    grp_id = grp_action.get("id")
+                    if grp_id:
+                        grp_id_str = str(grp_id)
+                        if grp_id_str in groups_data:
+                            group_info = groups_data[grp_id_str]
+                            device_ids = group_info.get("devices", [])
+                            affected_ids.update(device_ids)
+        
+        # Get epAct
+        ep_act = getattr(scene_device, "epAct", None)
+        if ep_act and isinstance(ep_act, list):
+            for ep_action in ep_act:
+                if isinstance(ep_action, dict):
+                    ep_id = ep_action.get("id")
+                    if ep_id:
+                        affected_ids.add(str(ep_id))
+        
+        return affected_ids
+    
+    def _enrich_extra_state_attributes(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Enrich extra_state_attributes with common attributes like controlled_by_scenes.
+        
+        Args:
+            attrs: Dictionary of attributes to enrich
+            
+        Returns:
+            Enriched attributes dictionary
+        """
+        # Add controlled_by_scenes if not already present
+        if "controlled_by_scenes" not in attrs:
+            controlled_by = self._get_controlled_by_scenes()
+            if controlled_by:
+                attrs["controlled_by_scenes"] = controlled_by
+        
+        return attrs
 
     async def async_open_cover_tilt(self, **kwargs):
         """Open the cover tilt."""
@@ -1016,6 +1647,24 @@ class HACover(CoverEntity, HAEntity):
     async def async_stop_cover_tilt(self, **kwargs):
         """Stop the cover tilt."""
         await self._device.slope_stop()
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes including permissions."""
+        attrs: dict[str, Any] = {}
+        
+        # Add permissions for main attributes
+        main_attrs = ["position", "slope", "positionCmd", "slopeCmd"]
+        permissions = self._get_permissions_for_attributes(main_attrs)
+        if permissions:
+            attrs["permissions"] = permissions
+        
+        # Add controlled_by_scenes
+        controlled_by = self._get_controlled_by_scenes()
+        if controlled_by:
+            attrs["controlled_by_scenes"] = controlled_by
+        
+        return attrs
 
 
 class HASmoke(BinarySensorEntity, HAEntity):
@@ -1058,6 +1707,12 @@ class HASmoke(BinarySensorEntity, HAEntity):
         if "model" in device_info:
             info["model"] = device_info["model"]
         return self._enrich_device_info(info)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        attrs: dict[str, Any] = {}
+        return self._enrich_extra_state_attributes(attrs)
 
 
 class HaClimate(ClimateEntity, HAEntity):
@@ -2333,12 +2988,15 @@ class HAScene(Scene, HAEntity):
         
         Returns a set of device IDs that are controlled by this scene.
         Uses groups_data to resolve group IDs to device IDs.
+        Improved with better edge case handling and consistency validation.
         """
         # Use cache if available
         if self._cached_affected_device_ids is not None:
             return self._cached_affected_device_ids
 
         affected_device_ids: set[str] = set()
+        unresolved_groups: list[str] = []
+        unresolved_endpoints: list[dict] = []
         
         try:
             hub_instance = self._get_hub()
@@ -2361,42 +3019,105 @@ class HAScene(Scene, HAEntity):
                             if group_id_str in groups_data:
                                 group_info = groups_data[group_id_str]
                                 device_ids_from_group = group_info.get("devices", [])
+                                
+                                if not device_ids_from_group:
+                                    LOGGER.warning(
+                                        "Group %s exists but has no devices for scene %s",
+                                        group_id_str,
+                                        self._device.device_id,
+                                    )
+                                    unresolved_groups.append(group_id_str)
+                                    continue
+                                
+                                resolved_count = 0
                                 for device_id in device_ids_from_group:
                                     # Verify the device exists in hub
                                     if device_id in hub_instance.devices:
                                         affected_device_ids.add(device_id)
+                                        resolved_count += 1
                                     else:
                                         # Try to find the device with different formats
                                         # Sometimes the device ID format might differ
-                                        for known_device_id in hub_instance.devices:
+                                        found_match = False
+                                        for known_device_id, known_device in hub_instance.devices.items():
+                                            # Try exact match first
+                                            if device_id == known_device_id:
+                                                affected_device_ids.add(known_device_id)
+                                                resolved_count += 1
+                                                found_match = True
+                                                break
+                                            
+                                            # Try device_id attribute
+                                            if hasattr(known_device, "device_id"):
+                                                if str(known_device.device_id) == device_id:
+                                                    affected_device_ids.add(known_device_id)
+                                                    resolved_count += 1
+                                                    found_match = True
+                                                    break
+                                            
+                                            # Try _id attribute
+                                            if hasattr(known_device, "_id"):
+                                                if str(known_device._id) == device_id:
+                                                    affected_device_ids.add(known_device_id)
+                                                    resolved_count += 1
+                                                    found_match = True
+                                                    break
+                                            
+                                            # Last resort: partial match
                                             if device_id in known_device_id or known_device_id in device_id:
                                                 affected_device_ids.add(known_device_id)
+                                                resolved_count += 1
+                                                found_match = True
+                                                LOGGER.debug(
+                                                    "Partial match: group device %s -> hub device %s",
+                                                    device_id,
+                                                    known_device_id,
+                                                )
                                                 break
-                                LOGGER.debug(
-                                    "Resolved group %s to %d device(s) for scene %s",
-                                    group_id_str,
-                                    len(device_ids_from_group),
-                                    self._device.device_id,
-                                )
+                                        
+                                        if not found_match:
+                                            LOGGER.debug(
+                                                "Device %s from group %s not found in hub for scene %s",
+                                                device_id,
+                                                group_id_str,
+                                                self._device.device_id,
+                                            )
+                                
+                                if resolved_count > 0:
+                                    LOGGER.debug(
+                                        "Resolved group %s to %d/%d device(s) for scene %s",
+                                        group_id_str,
+                                        resolved_count,
+                                        len(device_ids_from_group),
+                                        self._device.device_id,
+                                    )
+                                else:
+                                    unresolved_groups.append(group_id_str)
                             else:
                                 # Fallback: check if group ID is directly a device ID
                                 if group_id_str in hub_instance.devices:
                                     affected_device_ids.add(group_id_str)
+                                    LOGGER.debug(
+                                        "Group ID %s resolved as direct device ID for scene %s",
+                                        group_id_str,
+                                        self._device.device_id,
+                                    )
                                 else:
+                                    unresolved_groups.append(group_id_str)
                                     LOGGER.debug(
                                         "Group %s not found in groups_data for scene %s",
                                         group_id_str,
                                         self._device.device_id,
                                     )
 
-            # Extract IDs from epAct
-            # Format: {"devId": X, "epId": Y, "state": [...]}
-            # Device unique ID format: "{epId}_{devId}" or "epId" if epId == devId
+            # Extract IDs from epAct with improved resolution
+            # Format: {"devId": X, "epId": Y, "state": [...]} or {"id": X, "state": [...]}
             if ep_act and isinstance(ep_act, list):
                 for endpoint in ep_act:
                     if isinstance(endpoint, dict):
-                        dev_id = endpoint.get("devId")
-                        ep_id = endpoint.get("epId")
+                        # Handle both formats: {"devId": X, "epId": Y} and {"id": X}
+                        dev_id = endpoint.get("devId") or endpoint.get("id")
+                        ep_id = endpoint.get("epId") or endpoint.get("id")
                         
                         # Priority order for device ID resolution:
                         # 1. Format "{epId}_{devId}" if both exist and different
@@ -2420,6 +3141,15 @@ class HAScene(Scene, HAEntity):
                         elif dev_id:
                             candidate_ids.append(str(dev_id))
                         
+                        if not candidate_ids:
+                            unresolved_endpoints.append(endpoint)
+                            LOGGER.debug(
+                                "Endpoint in epAct has no valid ID for scene %s: %s",
+                                self._device.device_id,
+                                endpoint,
+                            )
+                            continue
+                        
                         # Try each candidate ID
                         found = False
                         for candidate_id in candidate_ids:
@@ -2433,8 +3163,34 @@ class HAScene(Scene, HAEntity):
                                     candidate_id,
                                 )
                                 break
+                            
+                            # Also check device_id and _id attributes
+                            for known_device_id, known_device in hub_instance.devices.items():
+                                if hasattr(known_device, "device_id") and str(known_device.device_id) == candidate_id:
+                                    affected_device_ids.add(known_device_id)
+                                    found = True
+                                    LOGGER.debug(
+                                        "Resolved epAct endpoint (devId=%s, epId=%s) to device %s via device_id",
+                                        dev_id,
+                                        ep_id,
+                                        known_device_id,
+                                    )
+                                    break
+                                if hasattr(known_device, "_id") and str(known_device._id) == candidate_id:
+                                    affected_device_ids.add(known_device_id)
+                                    found = True
+                                    LOGGER.debug(
+                                        "Resolved epAct endpoint (devId=%s, epId=%s) to device %s via _id",
+                                        dev_id,
+                                        ep_id,
+                                        known_device_id,
+                                    )
+                                    break
+                            
+                            if found:
+                                break
                         
-                        if not found and candidate_ids:
+                        if not found:
                             # Last resort: try partial matches
                             for known_device_id in hub_instance.devices:
                                 for candidate_id in candidate_ids:
@@ -2450,6 +3206,31 @@ class HAScene(Scene, HAEntity):
                                         break
                                 if found:
                                     break
+                            
+                            if not found:
+                                unresolved_endpoints.append(endpoint)
+                                LOGGER.debug(
+                                    "Could not resolve epAct endpoint (devId=%s, epId=%s) for scene %s",
+                                    dev_id,
+                                    ep_id,
+                                    self._device.device_id,
+                                )
+
+            # Log warnings for unresolved items
+            if unresolved_groups:
+                LOGGER.warning(
+                    "Scene %s has %d unresolved group(s): %s",
+                    self._device.device_id,
+                    len(unresolved_groups),
+                    unresolved_groups,
+                )
+            
+            if unresolved_endpoints:
+                LOGGER.warning(
+                    "Scene %s has %d unresolved endpoint(s)",
+                    self._device.device_id,
+                    len(unresolved_endpoints),
+                )
 
             # Cache result
             self._cached_affected_device_ids = affected_device_ids
@@ -2739,6 +3520,98 @@ class HAScene(Scene, HAEntity):
                 if affected_device_names:
                     attrs["affected_device_names"] = affected_device_names
         
+        # Add detailed actions for each affected device
+        detailed_actions = []
+        grp_act = getattr(self._device, "grpAct", None)
+        ep_act = getattr(self._device, "epAct", None)
+        
+        hub_instance = self._get_hub()
+        
+        # Process grpAct
+        if grp_act and isinstance(grp_act, list):
+            for grp_action in grp_act:
+                if isinstance(grp_action, dict):
+                    grp_id = grp_action.get("id")
+                    state_info = grp_action.get("state", [])
+                    
+                    if grp_id:
+                        grp_id_str = str(grp_id)
+                        # Resolve group to devices
+                        from .tydom.MessageHandler import groups_data
+                        if grp_id_str in groups_data:
+                            group_info = groups_data[grp_id_str]
+                            group_name = group_info.get("name", f"Group {grp_id_str}")
+                            device_ids = group_info.get("devices", [])
+                            
+                            for device_id in device_ids:
+                                device_name = None
+                                if hub_instance and hasattr(hub_instance, "devices"):
+                                    if device_id in hub_instance.devices:
+                                        device = hub_instance.devices[device_id]
+                                        device_name = getattr(device, "device_name", None)
+                                
+                                action_detail = {
+                                    "device_id": device_id,
+                                    "device_name": device_name or f"Device {device_id}",
+                                    "group_id": grp_id_str,
+                                    "group_name": group_name,
+                                    "actions": []
+                                }
+                                
+                                # Add state actions
+                                if state_info and isinstance(state_info, list):
+                                    for state_item in state_info:
+                                        if isinstance(state_item, dict):
+                                            action_detail["actions"].append({
+                                                "name": state_item.get("name", ""),
+                                                "value": state_item.get("value", "")
+                                            })
+                                
+                                if action_detail["actions"]:
+                                    detailed_actions.append(action_detail)
+        
+        # Process epAct
+        if ep_act and isinstance(ep_act, list):
+            for ep_action in ep_act:
+                if isinstance(ep_action, dict):
+                    ep_id = ep_action.get("id")
+                    state_info = ep_action.get("state", [])
+                    
+                    if ep_id:
+                        ep_id_str = str(ep_id)
+                        device_name = None
+                        if hub_instance and hasattr(hub_instance, "devices"):
+                            # Try to find device by various ID formats
+                            for _id, device in hub_instance.devices.items():
+                                if (
+                                    _id == ep_id_str
+                                    or str(getattr(device, "device_id", "")) == ep_id_str
+                                    or str(getattr(device, "_id", "")) == ep_id_str
+                                ):
+                                    device_name = getattr(device, "device_name", None)
+                                    break
+                        
+                        action_detail = {
+                            "device_id": ep_id_str,
+                            "device_name": device_name or f"Device {ep_id_str}",
+                            "actions": []
+                        }
+                        
+                        # Add state actions
+                        if state_info and isinstance(state_info, list):
+                            for state_item in state_info:
+                                if isinstance(state_item, dict):
+                                    action_detail["actions"].append({
+                                        "name": state_item.get("name", ""),
+                                        "value": state_item.get("value", "")
+                                    })
+                        
+                        if action_detail["actions"]:
+                            detailed_actions.append(action_detail)
+        
+        if detailed_actions:
+            attrs["detailed_actions"] = detailed_actions
+        
         # Add related entity IDs for scene configuration
         # This allows Home Assistant to know which entities are controlled by this scene
         if hasattr(self, '_related_entity_ids') and self._related_entity_ids:
@@ -2962,6 +3835,63 @@ class HAScene(Scene, HAEntity):
             ) from e
 
 
+class HAMoment(SwitchEntity, HAEntity):
+    """Representation of a Tydom Moment/Program."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, device: TydomMoment, hass) -> None:
+        """Initialize HAMoment."""
+        self.hass = hass
+        self._device = device
+        self._device._ha_device = self  # type: ignore[assignment]
+        self._attr_unique_id = f"{self._device.device_id}_moment"
+        self._attr_name = self._device.device_name
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return information to link this entity with the gateway device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.device_id)},
+            "name": self._device.device_name,
+            "manufacturer": "Delta Dore",
+            "model": "Tydom Moment",
+            "via_device": (DOMAIN, self._get_tydom_gateway_device_id() or ""),
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if moment is active (not suspended)."""
+        return not self._device.is_suspended
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Resume the moment (turn off suspension)."""
+        await self._device.suspend_moment(suspend=False, suspend_to=0)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Suspend the moment indefinitely."""
+        await self._device.suspend_moment(suspend=True, suspend_to=-1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes for the moment."""
+        attrs: dict[str, Any] = {
+            "moment_id": self._device.moment_id,
+            "suspended": self._device.is_suspended,
+            "suspend_to": self._device.suspend_to,
+        }
+        
+        # Add all moment data
+        if self._device.moment_data:
+            for key, value in self._device.moment_data.items():
+                if key not in ["id", "name"]:
+                    attrs[key] = value
+        
+        return attrs
+
+
 class HASwitch(SwitchEntity, HAEntity):
     """Representation of a Tydom Switch."""
 
@@ -3011,6 +3941,12 @@ class HASwitch(SwitchEntity, HAEntity):
             return "mdi:toggle-switch"
         else:
             return "mdi:toggle-switch-off"
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        attrs: dict[str, Any] = {}
+        return self._enrich_extra_state_attributes(attrs)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -3045,6 +3981,88 @@ class HASwitch(SwitchEntity, HAEntity):
                 await self._device._tydom_client.put_devices_data(
                     self._device._id, self._device._endpoint, "on", "false"
                 )
+
+
+class HAGroup(ButtonEntity, HAEntity):
+    """Representation of a Tydom Group."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:group"
+
+    def __init__(self, device: TydomGroup, hass) -> None:
+        """Initialize HAGroup."""
+        self.hass = hass
+        self._device = device
+        self._device._ha_device = self  # type: ignore[assignment]
+        self._attr_unique_id = f"{self._device.device_id}_group"
+        self._attr_name = self._device.device_name
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return information to link this entity with the gateway device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.device_id)},
+            "name": self._device.device_name,
+            "manufacturer": "Delta Dore",
+            "model": "Tydom Group",
+            "via_device": (DOMAIN, self._get_tydom_gateway_device_id() or ""),
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes for the group."""
+        attrs: dict[str, Any] = {
+            "group_id": self._device.group_id,
+            "device_count": len(self._device.device_ids),
+        }
+        
+        # Add device IDs
+        if self._device.device_ids:
+            attrs["device_ids"] = self._device.device_ids
+            
+            # Try to get device names
+            hub_instance = self._get_hub()
+            if hub_instance and hasattr(hub_instance, "devices"):
+                device_names = []
+                for device_id in self._device.device_ids:
+                    # Try to find device by various ID formats
+                    found_device = None
+                    for _id, device in hub_instance.devices.items():
+                        if (
+                            _id == device_id
+                            or str(getattr(device, "device_id", "")) == device_id
+                            or str(getattr(device, "_id", "")) == device_id
+                        ):
+                            found_device = device
+                            break
+                    
+                    if found_device:
+                        device_name = getattr(found_device, "device_name", None)
+                        if device_name:
+                            device_names.append(device_name)
+                        elif hasattr(found_device, "productName"):
+                            product_name = getattr(found_device, "productName", None)
+                            if product_name:
+                                device_names.append(str(product_name))
+                
+                if device_names:
+                    attrs["device_names"] = device_names
+        
+        return attrs
+
+    async def async_press(self) -> None:
+        """Handle the button press.
+        
+        For now, groups don't have a direct action, but they can be used
+        to activate scenarios on the group.
+        """
+        LOGGER.debug("Group %s button pressed", self._device.device_name)
+        # TODO: Implement group actions when needed
+
+    async def async_activate_scenario(self, scenario_id: str) -> None:
+        """Activate a scenario on this group."""
+        await self._device.activate_scenario(scenario_id)
 
 
 class HAButton(ButtonEntity, HAEntity):

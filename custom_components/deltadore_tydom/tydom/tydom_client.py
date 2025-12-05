@@ -404,25 +404,77 @@ class TydomClient:
         )
         return digest
 
-    async def send_bytes(self, a_bytes: bytes):
-        """Send bytes to connection, retry if it fails."""
+    async def send_bytes(self, a_bytes: bytes, max_retries: int = 3, retry_delay: float = 1.0):
+        """Send bytes to connection with intelligent retry mechanism.
+        
+        Args:
+            a_bytes: Bytes to send
+            max_retries: Maximum number of retry attempts
+            retry_delay: Initial delay between retries (exponential backoff)
+        """
         if file_mode:
             return
 
-        if self._connection is not None:
-            try:
-                await self._connection.send_bytes(a_bytes)
-            except ConnectionResetError:
-                # Failed, retrying...
-                try:
-                    self._connection = await self.async_connect()
-                    await self._connection.send_bytes(a_bytes)
-                except ConnectionResetError:
-                    LOGGER.warning("Cannot send message to Tydom. Connection was lost.")
-        else:
+        if self._connection is None:
             LOGGER.warning(
                 "Cannot send message to Tydom because no connection has been established yet."
             )
+            return
+
+        last_exception = None
+        for attempt in range(max_retries + 1):
+            try:
+                await self._connection.send_bytes(a_bytes)
+                if attempt > 0:
+                    LOGGER.info(
+                        "Successfully sent message after %d retry attempt(s)",
+                        attempt,
+                    )
+                return
+            except (ConnectionResetError, ConnectionError, OSError) as e:
+                last_exception = e
+                if attempt < max_retries:
+                    delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                    LOGGER.warning(
+                        "Connection error (attempt %d/%d): %s. Retrying in %.1f seconds...",
+                        attempt + 1,
+                        max_retries + 1,
+                        str(e),
+                        delay,
+                    )
+                    try:
+                        # Try to reconnect
+                        self._connection = await self.async_connect()
+                        await asyncio.sleep(delay)
+                    except Exception as reconnect_error:
+                        LOGGER.error(
+                            "Failed to reconnect (attempt %d/%d): %s",
+                            attempt + 1,
+                            max_retries + 1,
+                            reconnect_error,
+                        )
+                        if attempt < max_retries:
+                            await asyncio.sleep(delay)
+                else:
+                    LOGGER.error(
+                        "Cannot send message to Tydom after %d attempts. Connection was lost: %s",
+                        max_retries + 1,
+                        str(e),
+                    )
+            except Exception as e:
+                # For other exceptions, don't retry
+                LOGGER.error(
+                    "Unexpected error sending message to Tydom: %s",
+                    str(e),
+                    exc_info=True,
+                )
+                raise
+        
+        # If we get here, all retries failed
+        if last_exception:
+            raise TydomClientApiClientCommunicationError(
+                f"Failed to send message after {max_retries + 1} attempts"
+            ) from last_exception
 
     async def send_message(self, method, msg):
         """Send Generic message to Tydom."""
@@ -475,30 +527,71 @@ class TydomClient:
         url: str,
         body: dict | bytes | None = None,
         headers: dict | None = None,
+        timeout: float = 10.0,
     ) -> list[dict] | None:
-        """Send request and wait for its reply.
+        """Send request and wait for its reply with timeout handling.
 
         Args:
             method: Request method
             url: Request URL
             body: Request body
             headers: Request headers
+            timeout: Timeout in seconds (default: 10.0)
 
         Returns:
             List of reply events or None
 
+        Raises:
+            TydomClientApiClientCommunicationError: If timeout or communication error occurs
         """
         event = asyncio.Event()
 
         transaction_id, request = self._message_handler.prepare_request(
             method, url, body, headers, reply_event=event
         )
-        await self.send_bytes(request)
+        
+        try:
+            await self.send_bytes(request)
+        except Exception as e:
+            LOGGER.error(
+                "Failed to send request %s %s: %s",
+                method,
+                url,
+                str(e),
+                exc_info=True,
+            )
+            raise TydomClientApiClientCommunicationError(
+                f"Failed to send request {method} {url}: {str(e)}"
+            ) from e
 
-        # Wait for the reply
-        await event.wait()
+        # Wait for the reply with timeout
+        try:
+            async with async_timeout.timeout(timeout):
+                await event.wait()
+        except asyncio.TimeoutError:
+            LOGGER.warning(
+                "Timeout waiting for reply to %s %s (transaction_id: %s, timeout: %.1fs)",
+                method,
+                url,
+                transaction_id,
+                timeout,
+            )
+            # Remove the pending reply to avoid memory leak
+            self._message_handler.remove_reply(transaction_id)
+            raise TydomClientApiClientCommunicationError(
+                f"Timeout waiting for reply to {method} {url}"
+            )
 
         reply = self._message_handler.get_reply(transaction_id)
+
+        if reply is None:
+            LOGGER.warning(
+                "No reply received for %s %s (transaction_id: %s)",
+                method,
+                url,
+                transaction_id,
+            )
+            return None
 
         return reply["events"] if reply else None
 
@@ -707,8 +800,26 @@ class TydomClient:
             await self.send_bytes(a_bytes)
         return 0
 
-    async def put_devices_data(self, device_id, endpoint_id, name, value):
-        """Give order (name + value) to endpoint."""
+    async def put_devices_data(
+        self,
+        device_id,
+        endpoint_id,
+        name,
+        value,
+        max_retries: int = 2,
+    ):
+        """Give order (name + value) to endpoint with retry mechanism.
+        
+        Args:
+            device_id: Device ID
+            endpoint_id: Endpoint ID
+            name: Attribute name
+            value: Attribute value
+            max_retries: Maximum number of retry attempts (default: 2)
+        
+        Raises:
+            TydomClientApiClientCommunicationError: If all retry attempts fail
+        """
         # For shutter, value is the percentage of closing
         body: str
         if value is None:
@@ -728,6 +839,30 @@ class TydomClient:
             + "\r\n\r\n"
         )
         a_bytes = self._cmd_prefix + bytes(str_request, "ascii")
+        
+        # Log the command (masking sensitive data)
+        log_value = "***" if "pwd" in name.lower() or "password" in name.lower() else value
+        LOGGER.debug(
+            "Sending command: device_id=%s, endpoint_id=%s, name=%s, value=%s",
+            device_id,
+            endpoint_id,
+            name,
+            log_value,
+        )
+        
+        # Send with retry mechanism
+        try:
+            await self.send_bytes(a_bytes, max_retries=max_retries)
+        except TydomClientApiClientCommunicationError as e:
+            LOGGER.error(
+                "Failed to send command after retries: device_id=%s, endpoint_id=%s, name=%s, value=%s, error=%s",
+                device_id,
+                endpoint_id,
+                name,
+                log_value,
+                str(e),
+            )
+            raise
         LOGGER.debug("Sending message to tydom (%s %s)", "PUT device data", body)
         if not file_mode:
             await self.send_bytes(a_bytes)

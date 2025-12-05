@@ -89,7 +89,12 @@
             "invalid_refresh_interval": "L'intervalle de rafraîchissement n'est pas valide",
             "communication_error": "Impossible de se connecter à la passerelle Tydom",
             "authentication_error": "Erreur d'authentification",
-            "invalid_zone_config": "La configuration des zones est invalide. Syntaxe : zone_id_1,zone_id_2... Exemple : 1,2,4"
+            "invalid_zone_config": "La configuration des zones est invalide. Syntaxe : zone_id_1,zone_id_2... Exemple : 1,2,4",
+            "validation_error": "Erreur de validation",
+            "value_out_of_range": "La valeur est hors des limites autorisées",
+            "value_invalid_step": "La valeur n'est pas un multiple du pas autorisé",
+            "value_invalid_enum": "La valeur n'est pas dans les valeurs autorisées",
+            "attribute_not_writable": "L'attribut n'est pas modifiable"
         },
         "abort": {
             "discover_timeout": "Impossible de découvrir les appareils",
@@ -182,6 +187,16 @@
         "reload_devices": {
             "name": "Recharger les appareils",
             "description": "Recharger tous les appareils et entités comme au démarrage initial. Cette action supprime toutes les entités existantes et les recrée depuis zéro."
+        },
+        "activate_group_scenario": {
+            "name": "Activer un scénario sur un groupe",
+            "description": "Activer un scénario sur un groupe Tydom",
+            "fields": {
+                "scenario_id": {
+                    "name": "ID du scénario",
+                    "description": "L'ID du scénario à activer"
+                }
+            }
         }
     },
     "entity": {
@@ -446,6 +461,36 @@
             },
             "keyversionhw": {
                 "name": "Version matérielle clé"
+            },
+            "longitude": {
+                "name": "Longitude"
+            },
+            "latitude": {
+                "name": "Latitude"
+            },
+            "clock": {
+                "name": "Horloge"
+            },
+            "timezone": {
+                "name": "Fuseau horaire"
+            },
+            "clock_source": {
+                "name": "Source de l'horloge"
+            },
+            "summer_offset": {
+                "name": "Décalage été"
+            },
+            "bdd_status": {
+                "name": "Statut de la base de données"
+            },
+            "permissions": {
+                "name": "Permissions"
+            },
+            "readable": {
+                "name": "Lisible"
+            },
+            "writable": {
+                "name": "Modifiable"
             }
         },
         "binary_sensor": {
@@ -487,6 +532,67 @@
             },
             "techsmokedefect": {
                 "name": "Défaut détecteur de fumée"
+            },
+            "protocol_x3d": {
+                "name": "Protocole X3D"
+            },
+            "protocol_zigbee": {
+                "name": "Protocole Zigbee"
+            },
+            "protocol_x3dv": {
+                "name": "Protocole X3DV"
+            },
+            "protocol_pltservice": {
+                "name": "Protocole PltService"
+            },
+            "protocol_http": {
+                "name": "Protocole HTTP"
+            },
+            "bdd_empty": {
+                "name": "Base de données vide"
+            },
+            "api_mode": {
+                "name": "Mode API"
+            },
+            "plt_registered": {
+                "name": "Plateforme enregistrée"
+            },
+            "password_empty": {
+                "name": "Mot de passe vide"
+            },
+            "maintenance": {
+                "name": "Maintenance"
+            }
+        },
+        "group": {
+            "name": "Groupe",
+            "state_attributes": {
+                "group_id": {
+                    "name": "ID du groupe"
+                },
+                "device_count": {
+                    "name": "Nombre d'appareils"
+                },
+                "device_ids": {
+                    "name": "IDs des appareils"
+                },
+                "device_names": {
+                    "name": "Noms des appareils"
+                }
+            }
+        },
+        "moment": {
+            "name": "Moment",
+            "state_attributes": {
+                "moment_id": {
+                    "name": "ID du moment"
+                },
+                "suspended": {
+                    "name": "Suspendu"
+                },
+                "suspend_to": {
+                    "name": "Suspendu jusqu'à"
+                }
             }
         }
     },

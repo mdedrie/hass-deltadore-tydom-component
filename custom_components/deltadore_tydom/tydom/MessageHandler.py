@@ -102,6 +102,25 @@ class MessageHandler:
 
         return reply
 
+    def remove_reply(self, transaction_id: str) -> None:
+        """
+        Remove a pending reply to prevent memory leaks.
+        
+        This should be called when a request times out or fails.
+
+        Args:
+            transaction_id: The transaction ID of the request to remove.
+        """
+        # Remove from cdata_replies
+        for reply in self._cdata_replies[:]:
+            if reply["transaction_id"] == transaction_id:
+                self._cdata_replies.remove(reply)
+                break
+        
+        # Remove from end_reply_events
+        self._end_reply_events.pop(transaction_id, None)
+        LOGGER.debug("Removed pending reply for transaction_id: %s", transaction_id)
+
     async def route_response(self, bytes_str: bytes) -> list["TydomDevice"] | None:
         """
         Identify message type and dispatch the result.
@@ -918,8 +937,9 @@ class MessageHandler:
         return devices
 
     async def parse_groups_file(self, parsed, transaction_id):
-        """Parse groups file."""
+        """Parse groups file and create TydomGroup devices."""
         LOGGER.debug("parse_groups_file : %s", parsed)
+        devices = []
         # Store groups data for resolving grpAct in scenarios
         if parsed and isinstance(parsed, dict):
             groups = parsed.get("groups", [])
@@ -931,9 +951,9 @@ class MessageHandler:
                         
                         # Extract device IDs from the group
                         device_ids = []
-                        devices = group.get("devices", [])
-                        if isinstance(devices, list):
-                            for device in devices:
+                        devices_list = group.get("devices", [])
+                        if isinstance(devices_list, list):
+                            for device in devices_list:
                                 if isinstance(device, dict):
                                     # Get device ID
                                     dev_id = device.get("id")
@@ -958,33 +978,68 @@ class MessageHandler:
                                                         device_ids.append(ep_id_str)
                         
                         # Store group data
+                        group_name = group.get("name", f"Group {group_id}")
                         groups_data[group_id_str] = {
                             "devices": device_ids,
-                            "name": group.get("name", f"Group {group_id}"),
+                            "name": group_name,
                         }
-                        LOGGER.debug(
-                            "Stored group %s (%s) with %d device(s)",
+                        
+                        # Create TydomGroup device
+                        # Import here to avoid circular import
+                        from .tydom_devices import TydomGroup
+                        group_device = TydomGroup(
+                            self.tydom_client,
                             group_id_str,
-                            groups_data[group_id_str]["name"],
+                            group_name,
+                            device_ids,
+                        )
+                        devices.append(group_device)
+                        
+                        LOGGER.debug(
+                            "Created group: %s (%s) with %d device(s)",
+                            group_id_str,
+                            group_name,
                             len(device_ids),
                         )
                 LOGGER.debug(
-                    "Found and stored %d groups", len(groups) if isinstance(groups, list) else 0
+                    "Found and created %d groups", len(groups) if isinstance(groups, list) else 0
                 )
-        return []
+        return devices
 
     async def parse_moments_file(self, parsed, transaction_id):
-        """Parse moments file."""
+        """Parse moments file and create TydomMoment devices."""
         LOGGER.debug("parse_moments_file : %s", parsed)
-        # Moments (programs/schedules) are currently not exposed as entities
-        # but we parse them for future use (could be exposed as schedules or time-based automations)
+        devices = []
         if parsed and isinstance(parsed, dict):
             moments = parsed.get("moments", [])
+            if isinstance(moments, list):
+                for moment in moments:
+                    if isinstance(moment, dict) and "id" in moment:
+                        moment_id = moment.get("id")
+                        moment_id_str = str(moment_id)
+                        moment_name = moment.get("name", f"Moment {moment_id}")
+                        
+                        # Create TydomMoment device
+                        # Import here to avoid circular import
+                        from .tydom_devices import TydomMoment
+                        moment_device = TydomMoment(
+                            self.tydom_client,
+                            moment_id_str,
+                            moment_name,
+                            moment,
+                        )
+                        devices.append(moment_device)
+                        
+                        LOGGER.debug(
+                            "Created moment: %s (%s)",
+                            moment_id_str,
+                            moment_name,
+                        )
             LOGGER.debug(
-                "Found %d moments/programs",
+                "Found and created %d moments/programs",
                 len(moments) if isinstance(moments, list) else 0,
             )
-        return []
+        return devices
 
     # FUNCTIONS
 

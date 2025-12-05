@@ -105,6 +105,37 @@ class TydomStatusView(HomeAssistantView):
         if entry and CONF_EMAIL in entry.data and entry.data[CONF_EMAIL]:
             config_mode = CONF_CLOUD_MODE
         
+        # Get gateway info if available
+        gateway_info = {}
+        for device_id, device in tydom_hub.devices.items():
+            from .tydom.tydom_devices import Tydom
+            if isinstance(device, Tydom):
+                gateway_info = {
+                    "device_id": device_id,
+                    "name": getattr(device, "device_name", "Tydom Gateway"),
+                    "mac": getattr(device, "mac", tydom_hub._mac),
+                    "main_version_sw": getattr(device, "mainVersionSW", None),
+                    "main_version_hw": getattr(device, "mainVersionHW", None),
+                    "key_version_sw": getattr(device, "keyVersionSW", None),
+                    "key_version_hw": getattr(device, "keyVersionHW", None),
+                    "zigbee_version_sw": getattr(device, "zigbeeVersionSW", None),
+                    "java_version": getattr(device, "javaVersion", None),
+                    "url_mediation": getattr(device, "urlMediation", None),
+                    "geoloc": getattr(device, "geoloc", None),
+                    "clock": getattr(device, "clock", None),
+                }
+                break
+        
+        # Count groups and moments
+        groups_count = 0
+        moments_count = 0
+        for device_id, device in tydom_hub.devices.items():
+            from .tydom.tydom_devices import TydomGroup, TydomMoment
+            if isinstance(device, TydomGroup):
+                groups_count += 1
+            elif isinstance(device, TydomMoment):
+                moments_count += 1
+        
         status_data = {
             "entry_id": entry_id,
             "online": getattr(tydom_hub, "online", False),
@@ -121,7 +152,10 @@ class TydomStatusView(HomeAssistantView):
                 "total_devices": total_devices,
                 "total_entities": total_entities,
                 "devices_by_type": devices_by_type,
+                "groups_count": groups_count,
+                "moments_count": moments_count,
             },
+            "gateway_info": gateway_info if gateway_info else None,
             "ready": tydom_hub.ready(),
         }
         
@@ -190,6 +224,132 @@ class TydomDevicesView(HomeAssistantView):
             "entry_id": entry_id,
             "devices": devices_list,
             "total": len(devices_list),
+        })
+
+
+class TydomGroupsView(HomeAssistantView):
+    """View to handle groups requests."""
+
+    url = "/api/deltadore_tydom/groups"
+    name = "api:deltadore_tydom:groups"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Get groups list."""
+        hass: HomeAssistant = request.app["hass"]
+        entry_id = request.query.get("entry_id")
+        
+        hub_instance = get_hub_instance(hass, entry_id)
+        if not hub_instance:
+            return self.json_message(
+                "Hub instance not found", status_code=404
+            )
+        
+        tydom_hub, entry_id = hub_instance
+        
+        groups_list = []
+        from .tydom.tydom_devices import TydomGroup
+        from .tydom.MessageHandler import groups_data
+        
+        for device_id, device in tydom_hub.devices.items():
+            if isinstance(device, TydomGroup):
+                group_id = getattr(device, "group_id", None)
+                device_ids = getattr(device, "device_ids", [])
+                
+                # Get group info from groups_data
+                group_info = {}
+                if group_id and str(group_id) in groups_data:
+                    group_info = groups_data[str(group_id)]
+                
+                # Get device names
+                device_names = []
+                for dev_id in device_ids:
+                    if dev_id in tydom_hub.devices:
+                        dev = tydom_hub.devices[dev_id]
+                        device_names.append(getattr(dev, "device_name", dev_id))
+                
+                group_data = {
+                    "group_id": str(group_id) if group_id else device_id,
+                    "device_id": device_id,
+                    "name": getattr(device, "device_name", "Unknown Group"),
+                    "device_count": len(device_ids),
+                    "device_ids": device_ids,
+                    "device_names": device_names,
+                    "group_info": group_info,
+                }
+                
+                # Add HA entity info if available
+                if device_id in tydom_hub.ha_devices:
+                    ha_device = tydom_hub.ha_devices[device_id]
+                    group_data["ha_entity"] = {
+                        "unique_id": getattr(ha_device, "_attr_unique_id", None),
+                        "entity_id": getattr(ha_device, "entity_id", None),
+                    }
+                
+                groups_list.append(group_data)
+        
+        return self.json({
+            "entry_id": entry_id,
+            "groups": groups_list,
+            "total": len(groups_list),
+        })
+
+
+class TydomMomentsView(HomeAssistantView):
+    """View to handle moments requests."""
+
+    url = "/api/deltadore_tydom/moments"
+    name = "api:deltadore_tydom:moments"
+    requires_auth = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Get moments list."""
+        hass: HomeAssistant = request.app["hass"]
+        entry_id = request.query.get("entry_id")
+        
+        hub_instance = get_hub_instance(hass, entry_id)
+        if not hub_instance:
+            return self.json_message(
+                "Hub instance not found", status_code=404
+            )
+        
+        tydom_hub, entry_id = hub_instance
+        
+        moments_list = []
+        from .tydom.tydom_devices import TydomMoment
+        
+        for device_id, device in tydom_hub.devices.items():
+            if isinstance(device, TydomMoment):
+                moment_id = getattr(device, "moment_id", None)
+                moment_data = getattr(device, "moment_data", {})
+                suspend_to = getattr(device, "suspend_to", None)
+                
+                moment_info = {
+                    "moment_id": str(moment_id) if moment_id else device_id,
+                    "device_id": device_id,
+                    "name": getattr(device, "device_name", "Unknown Moment"),
+                    "suspend_to": suspend_to,
+                    "suspended": suspend_to is not None,
+                    "moment_data": moment_data,
+                }
+                
+                # Add HA entity info if available
+                if device_id in tydom_hub.ha_devices:
+                    ha_device = tydom_hub.ha_devices[device_id]
+                    moment_info["ha_entity"] = {
+                        "unique_id": getattr(ha_device, "_attr_unique_id", None),
+                        "entity_id": getattr(ha_device, "entity_id", None),
+                    }
+                    # Add state if available
+                    if hasattr(ha_device, "is_on"):
+                        moment_info["is_on"] = ha_device.is_on
+                
+                moments_list.append(moment_info)
+        
+        return self.json({
+            "entry_id": entry_id,
+            "moments": moments_list,
+            "total": len(moments_list),
         })
 
 

@@ -1,0 +1,478 @@
+[
+  {
+    "timestamp": "2025-12-05T23:38:28.136775",
+    "uri": "/scenarios/file",
+    "data": {
+      "scn": [
+        {
+          "id": 135039049,
+          "grpAct": [
+            {
+              "id": 285111554,
+              "state": [
+                {
+                  "value": "UP",
+                  "name": "positionCmd"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1050854444,
+          "grpAct": [
+            {
+              "id": 285111554,
+              "state": [
+                {
+                  "value": "DOWN",
+                  "name": "positionCmd"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1157126730,
+          "grpAct": [
+            {
+              "state": [
+                {
+                  "name": "positionCmd",
+                  "value": "STOP"
+                }
+              ],
+              "id": 285111554
+            }
+          ]
+        },
+        {
+          "grpAct": [
+            {
+              "id": 285111554,
+              "state": [
+                {
+                  "value": "0.0",
+                  "name": "position"
+                }
+              ]
+            }
+          ],
+          "id": 1234156954
+        },
+        {
+          "id": 60935018,
+          "grpAct": [
+            {
+              "id": 285111554,
+              "state": [
+                {
+                  "name": "position",
+                  "value": "100.0"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1610288987,
+          "grpAct": [
+            {
+              "id": 285111554,
+              "state": [
+                {
+                  "name": "position",
+                  "value": "100.0"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "epAct": [
+            {
+              "epId": 1707512229,
+              "state": [
+                {
+                  "value": "29.7",
+                  "name": "position"
+                }
+              ],
+              "devId": 1707512229
+            }
+          ],
+          "id": 1948206615
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2025-12-05T23:38:28.136896",
+    "uri": "/groups/file",
+    "data": {
+      "groups": [
+        {
+          "areas": [],
+          "id": 1941564015,
+          "devices": []
+        },
+        {
+          "id": 285111554,
+          "devices": [
+            {
+              "endpoints": [
+                {
+                  "id": 1707512229
+                }
+              ],
+              "id": 1707512231
+            },
+            {
+              "endpoints": [
+                {
+                  "id": 1707512231
+                }
+              ],
+              "id": 1707512235
+            },
+            {
+              "id": 1707512232,
+              "endpoints": [
+                {
+                  "id": 1707512230
+                }
+              ]
+            },
+            {
+              "endpoints": [
+                {
+                  "id": 1707512237
+                }
+              ],
+              "id": 1707512237
+            },
+            {
+              "endpoints": [
+                {
+                  "id": 1707512230
+                }
+              ],
+              "id": 1707512233
+            },
+            {
+              "id": 1707512234,
+              "endpoints": [
+                {
+                  "id": 1707512230
+                }
+              ]
+            },
+            {
+              "endpoints": [
+                {
+                  "id": 1707512229
+                }
+              ],
+              "id": 1707512230
+            },
+            {
+              "id": 1707512229,
+              "endpoints": [
+                {
+                  "id": 1707512229
+                }
+              ]
+            }
+          ],
+          "areas": []
+        },
+        {
+          "id": 635485575,
+          "areas": [],
+          "devices": []
+        },
+        {
+          "areas": [],
+          "id": 837519147,
+          "devices": []
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2025-12-05T23:38:28.137043",
+    "uri": "/configs/file",
+    "data": {
+      "version_application": "4.17.02 (1455)",
+      "date": 1755752847,
+      "version": "1.0.1",
+      "os": "ios",
+      "groups": [
+        {
+          "is_group_user": false,
+          "id": 1941564015,
+          "usage": "light",
+          "group_all": true,
+          "name": "TOTAL"
+        },
+        {
+          "is_group_user": false,
+          "id": 285111554,
+          "usage": "shutter",
+          "group_all": true,
+          "name": "TOTAL"
+        },
+        {
+          "id": 635485575,
+          "usage": "awning",
+          "group_all": true,
+          "is_group_user": false,
+          "name": "TOTAL"
+        },
+        {
+          "is_group_user": false,
+          "name": "TOTAL",
+          "usage": "plug",
+          "group_all": true,
+          "id": 837519147
+        }
+      ],
+      "scenarios": [
+        {
+          "id": 135039049,
+          "rule_id": "",
+          "type": "RE2020",
+          "name": "TWC_UP",
+          "picto": "picto_scenario_clap"
+        },
+        {
+          "id": 1050854444,
+          "rule_id": "",
+          "picto": "picto_scenario_clap",
+          "type": "RE2020",
+          "name": "TWC_DOWN"
+        },
+        {
+          "id": 1157126730,
+          "picto": "picto_scenario_clap",
+          "type": "RE2020",
+          "rule_id": "",
+          "name": "TWC_STOP"
+        },
+        {
+          "name": "Fermeture Volets",
+          "id": 1234156954,
+          "type": "NORMAL",
+          "rule_id": "",
+          "picto": "picto_scenario_night"
+        },
+        {
+          "id": 60935018,
+          "name": "Ouverture Urgence",
+          "picto": "picto_scenario_leaving",
+          "rule_id": "",
+          "type": "TRIGGER"
+        },
+        {
+          "name": "Ouverture Volets",
+          "picto": "picto_scenario_day",
+          "id": 1610288987,
+          "rule_id": "",
+          "type": "NORMAL"
+        },
+        {
+          "rule_id": "",
+          "type": "NORMAL",
+          "name": "Salon Jeu ",
+          "id": 1948206615,
+          "picto": "picto_scenario_tv"
+        }
+      ],
+      "zigbee_networks": [],
+      "id_catalog": "F2BD90F93B888DA02C54980F11AE4796DFCC98F447CD3FE326F5A3A964C939BF",
+      "areas": [],
+      "old_tycam": true,
+      "endpoints": [
+        {
+          "id_device": 1707512229,
+          "name": "Baie vitrée Salon",
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "anticipation_start": false,
+          "picto": "",
+          "first_usage": "shutter",
+          "last_usage": "shutter",
+          "id_endpoint": 1707512229
+        },
+        {
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "id_endpoint": 1707512229,
+          "first_usage": "shutter",
+          "anticipation_start": false,
+          "picto": "",
+          "id_device": 1707512230,
+          "name": "Fenêtre séjour ",
+          "last_usage": "shutter"
+        },
+        {
+          "id_endpoint": 1707512229,
+          "name": "Fenêtre bureau",
+          "anticipation_start": false,
+          "last_usage": "shutter",
+          "first_usage": "shutter",
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "id_device": 1707512231,
+          "picto": ""
+        },
+        {
+          "anticipation_start": false,
+          "id_device": 1707512232,
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "id_endpoint": 1707512230,
+          "name": "Fenetre cuisine xl",
+          "first_usage": "shutter",
+          "last_usage": "shutter",
+          "picto": ""
+        },
+        {
+          "id_device": 1707512233,
+          "first_usage": "shutter",
+          "last_usage": "shutter",
+          "id_endpoint": 1707512230,
+          "name": "Fenêtre cuisine ",
+          "anticipation_start": false,
+          "picto": "",
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          }
+        },
+        {
+          "name": "Fenetre chambre",
+          "last_usage": "shutter",
+          "first_usage": "shutter",
+          "anticipation_start": false,
+          "id_device": 1707512234,
+          "picto": "",
+          "id_endpoint": 1707512230,
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          }
+        },
+        {
+          "name": "fenêtre chambre ami",
+          "anticipation_start": false,
+          "id_device": 1707512235,
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "id_endpoint": 1707512231,
+          "last_usage": "shutter",
+          "first_usage": "shutter",
+          "picto": ""
+        },
+        {
+          "id_endpoint": 1707512237,
+          "widget_behavior": {
+            "tutorial_id": "25_tymoov"
+          },
+          "last_usage": "shutter",
+          "name": "baie vitrée sejour",
+          "anticipation_start": false,
+          "id_device": 1707512237,
+          "picto": "",
+          "first_usage": "shutter"
+        },
+        {
+          "picto": "",
+          "last_usage": "sensorThermo",
+          "id_endpoint": 1710425275,
+          "anticipation_start": false,
+          "id_device": 1710425275,
+          "name": "Tysense Thermo 1",
+          "widget_behavior": {
+            "tutorial_id": "35_se2000"
+          },
+          "first_usage": "sensor"
+        },
+        {
+          "id_endpoint": 1710425403,
+          "name": "Tysense Sun 1",
+          "widget_behavior": {
+            "tutorial_id": "tysense_sun"
+          },
+          "picto": "",
+          "last_usage": "sensorSun",
+          "anticipation_start": false,
+          "first_usage": "sensor",
+          "id_device": 1710425403
+        },
+        {
+          "anticipation_start": false,
+          "last_usage": "re2020ControlPassive",
+          "name": "Thermostat 1",
+          "id_device": 1710425647,
+          "first_usage": "hvac",
+          "picto": "",
+          "id_endpoint": 1710425647,
+          "widget_behavior": {
+            "action": "shutterCmd",
+            "tutorial_id": "tywell_control"
+          }
+        },
+        {
+          "last_usage": "sensorDFR",
+          "id_endpoint": 1716736448,
+          "first_usage": "sensor",
+          "anticipation_start": false,
+          "picto": "",
+          "id_device": 1716736448,
+          "name": "Detecteur fumée RDC",
+          "widget_behavior": {
+            "tutorial_id": "sensor_dfr"
+          }
+        },
+        {
+          "name": "Détecteur Fumée ETG",
+          "last_usage": "sensorDFR",
+          "picto": "",
+          "id_device": 1740329135,
+          "id_endpoint": 1740329135,
+          "widget_behavior": {
+            "tutorial_id": "sensor_dfr"
+          },
+          "first_usage": "sensor",
+          "anticipation_start": false
+        },
+        {
+          "picto": "",
+          "last_usage": "weather",
+          "first_usage": "weather",
+          "id_device": 1754427198,
+          "name": "Produit 1",
+          "anticipation_start": false,
+          "id_endpoint": 1754427198
+        },
+        {
+          "last_usage": "sensorSun",
+          "first_usage": "sensor",
+          "picto": "",
+          "anticipation_start": false,
+          "id_device": 1754475877,
+          "name": "Tysens sun 2 ouest",
+          "id_endpoint": 1754475877,
+          "widget_behavior": {
+            "tutorial_id": "tysense_sun"
+          }
+        }
+      ],
+      "moments": []
+    }
+  }
+]

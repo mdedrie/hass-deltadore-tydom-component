@@ -40,3 +40,17 @@ get_events:
 reload_devices:
   name: Reload devices
   description: Recharger tous les appareils et entités comme au démarrage initial. Cette action supprime toutes les entités existantes et les recrée depuis zéro.
+activate_group_scenario:
+  name: Activate scenario on group
+  description: Activate a scenario on a Tydom group
+  target:
+    entity:
+      integration: deltadore_tydom
+      domain: button
+  fields:
+    scenario_id:
+      name: Scenario ID
+      description: The ID of the scenario to activate
+      required: true
+      selector:
+        text:

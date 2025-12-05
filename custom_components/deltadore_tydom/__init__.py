@@ -61,6 +61,43 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     
     hass.services.async_register(DOMAIN, "reload_devices", handle_reload_devices)
     
+    # Register service for activating scenarios on groups
+    async def handle_activate_group_scenario(call):
+        """Handle activate_group_scenario service call."""
+        entity_id = call.data.get("entity_id")
+        scenario_id = call.data.get("scenario_id")
+        
+        if not entity_id or not scenario_id:
+            LOGGER.error("activate_group_scenario requires entity_id and scenario_id")
+            return
+        
+        # Get the entity
+        from homeassistant.helpers import entity_registry as er
+        entity_registry = er.async_get(hass)
+        entity_entry = entity_registry.async_get(entity_id)
+        
+        if not entity_entry:
+            LOGGER.error("Entity %s not found", entity_id)
+            return
+        
+        # Get the hub
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.error("No Tydom hub found")
+            return
+        
+        # Find the entity in the hub
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            if entity_id in tydom_hub.ha_devices:
+                ha_device = tydom_hub.ha_devices[entity_id]
+                if hasattr(ha_device, "async_activate_scenario"):
+                    await ha_device.async_activate_scenario(scenario_id)
+                    LOGGER.info("Activated scenario %s on group %s", scenario_id, entity_id)
+                    return
+        
+        LOGGER.error("Group entity %s not found in any hub", entity_id)
+    
+    hass.services.async_register(DOMAIN, "activate_group_scenario", handle_activate_group_scenario)
+    
     # Register panel and API routes
     try:
         await register_panel(hass)
@@ -78,6 +115,8 @@ async def register_panel(hass: HomeAssistant) -> None:
     
     hass.http.register_view(panel.TydomStatusView())
     hass.http.register_view(panel.TydomDevicesView())
+    hass.http.register_view(panel.TydomGroupsView())
+    hass.http.register_view(panel.TydomMomentsView())
     hass.http.register_view(panel.TydomConfigView())
     hass.http.register_view(panel.TydomActionsView())
     hass.http.register_view(panel.TydomLogsView())

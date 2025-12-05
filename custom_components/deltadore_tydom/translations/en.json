@@ -89,7 +89,12 @@
             "invalid_refresh_interval": "Refresh interval is not valid",
             "communication_error": "Couldn't connect to Tydom Gateway",
             "authentication_error": "Authentication error",
-            "invalid_zone_config": "Zone configuration is invalid. syntax is : zone_id_1,zone_id_2... Example: 1,2,4"
+            "invalid_zone_config": "Zone configuration is invalid. syntax is : zone_id_1,zone_id_2... Example: 1,2,4",
+            "validation_error": "Validation error",
+            "value_out_of_range": "Value is out of allowed range",
+            "value_invalid_step": "Value is not a multiple of the allowed step",
+            "value_invalid_enum": "Value is not in allowed values",
+            "attribute_not_writable": "Attribute is not writable"
         },
         "abort": {
             "discover_timeout": "Unable to discover devices",
@@ -181,6 +186,16 @@
         "reload_devices": {
             "name": "Reload devices",
             "description": "Reload all devices and entities as at initial startup. This action removes all existing entities and recreates them from scratch."
+        },
+        "activate_group_scenario": {
+            "name": "Activate scenario on group",
+            "description": "Activate a scenario on a Tydom group",
+            "fields": {
+                "scenario_id": {
+                    "name": "Scenario ID",
+                    "description": "The ID of the scenario to activate"
+                }
+            }
         }
     },
     "entity": {
@@ -445,6 +460,36 @@
             },
             "keyversionhw": {
                 "name": "Key hardware version"
+            },
+            "longitude": {
+                "name": "Longitude"
+            },
+            "latitude": {
+                "name": "Latitude"
+            },
+            "clock": {
+                "name": "Clock"
+            },
+            "timezone": {
+                "name": "Timezone"
+            },
+            "clock_source": {
+                "name": "Clock source"
+            },
+            "summer_offset": {
+                "name": "Summer offset"
+            },
+            "bdd_status": {
+                "name": "Database status"
+            },
+            "permissions": {
+                "name": "Permissions"
+            },
+            "readable": {
+                "name": "Readable"
+            },
+            "writable": {
+                "name": "Writable"
             }
         },
         "binary_sensor": {
@@ -486,6 +531,67 @@
             },
             "techsmokedefect": {
                 "name": "Smoke detector defect"
+            },
+            "protocol_x3d": {
+                "name": "X3D Protocol"
+            },
+            "protocol_zigbee": {
+                "name": "Zigbee Protocol"
+            },
+            "protocol_x3dv": {
+                "name": "X3DV Protocol"
+            },
+            "protocol_pltservice": {
+                "name": "PltService Protocol"
+            },
+            "protocol_http": {
+                "name": "HTTP Protocol"
+            },
+            "bdd_empty": {
+                "name": "Database empty"
+            },
+            "api_mode": {
+                "name": "API Mode"
+            },
+            "plt_registered": {
+                "name": "Platform registered"
+            },
+            "password_empty": {
+                "name": "Password empty"
+            },
+            "maintenance": {
+                "name": "Maintenance"
+            }
+        },
+        "group": {
+            "name": "Group",
+            "state_attributes": {
+                "group_id": {
+                    "name": "Group ID"
+                },
+                "device_count": {
+                    "name": "Device count"
+                },
+                "device_ids": {
+                    "name": "Device IDs"
+                },
+                "device_names": {
+                    "name": "Device names"
+                }
+            }
+        },
+        "moment": {
+            "name": "Moment",
+            "state_attributes": {
+                "moment_id": {
+                    "name": "Moment ID"
+                },
+                "suspended": {
+                    "name": "Suspended"
+                },
+                "suspend_to": {
+                    "name": "Suspend until"
+                }
             }
         }
     },
