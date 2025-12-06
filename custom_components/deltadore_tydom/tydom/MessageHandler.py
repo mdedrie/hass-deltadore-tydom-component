@@ -365,7 +365,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "belmDoor" | "klineDoor":
@@ -376,7 +376,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "garage_door":
@@ -387,7 +387,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "gate":
@@ -398,7 +398,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "light":
@@ -409,7 +409,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "conso":
@@ -420,7 +420,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "sensorDFR":
@@ -431,7 +431,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "boiler" | "sh_hvac" | "electric" | "aeraulic":
@@ -442,7 +442,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "alarm":
@@ -453,7 +453,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "weather":
@@ -464,7 +464,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "sensorDF":
@@ -475,7 +475,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case "sensorThermo":
@@ -486,7 +486,7 @@ class MessageHandler:
                     name,
                     last_usage,
                     endpoint,
-                    device_metadata[uid],
+                    device_metadata.get(uid),
                     data,
                 )
             case _:
