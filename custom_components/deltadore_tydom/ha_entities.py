@@ -442,10 +442,19 @@ class GenericSensor(SensorEntity):
         }
 
         # Add name if available
+        # Avoid using generic names like "Produit 1" from productName
+        generic_names = ["produit 1", "produit", "product 1", "product", "device", "appareil"]
+        
         if hasattr(self._device, "device_name") and self._device.device_name:
             info["name"] = self._device.device_name
         elif "model" in device_info_dict:
-            info["name"] = device_info_dict["model"]
+            model_name = device_info_dict["model"]
+            # Check if model name is generic - if so, use device ID instead
+            if model_name and model_name.lower().strip() not in generic_names:
+                info["name"] = model_name
+            else:
+                # Use device ID for generic names
+                info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
         else:
             info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
 
@@ -556,12 +565,23 @@ class BinarySensorBase(BinarySensorEntity):
             "identifiers": {(DOMAIN, self._device.device_id)},
         }
         # Add name if available
+        # Avoid using generic names like "Produit 1" from productName
+        generic_names = ["produit 1", "produit", "product 1", "product", "device", "appareil"]
+        
         if hasattr(self._device, "device_name") and self._device.device_name:
             info["name"] = self._device.device_name
         elif hasattr(self._device, "productName"):
             product_name = getattr(self._device, "productName", None)
             if product_name is not None:
-                info["name"] = str(product_name)
+                product_str = str(product_name)
+                # Check if product name is generic - if so, use device ID instead
+                if product_str.lower().strip() not in generic_names:
+                    info["name"] = product_str
+                else:
+                    # Use device ID for generic names
+                    info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
+            else:
+                info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
         else:
             info["name"] = f"Tydom Device {self._device.device_id[-6:]}"
         # Try to get manufacturer and model
@@ -3642,13 +3662,26 @@ class HAScene(Scene, HAEntity):
         # Get gateway device ID for via_device fallback
         gateway_device_id = self._get_tydom_gateway_device_id()
         
+        # Ensure gateway_device_id is available - if not, we can't create proper device_info
+        if not gateway_device_id:
+            LOGGER.warning(
+                "Cannot create device_info for scene %s: gateway device ID not found",
+                self._device.device_name,
+            )
+            # Fallback: return None to let Home Assistant handle it (should not happen in normal operation)
+            return None
+        
         # Check if this is a TWC scene
-        if self._is_twc_scene():
+        scene_name = self._device.device_name
+        is_twc = self._is_twc_scene()
+        
+        if is_twc:
             # Get zone (day/night)
             zone_key = self._get_zone_from_scene()
             
             # For TWC scenes, always create a virtual device, even if zone is not determined
             # If zone is not found, use a generic TWC device identifier
+            # IMPORTANT: All TWC scenes must use the same device_identifier to be grouped
             if zone_key:
                 # Create virtual device identifier for this zone
                 device_identifier = f"tywell_control_{zone_key}"
@@ -3660,6 +3693,7 @@ class HAScene(Scene, HAEntity):
                 tywell_device_id = self._find_tywell_device(zone_key)
             else:
                 # TWC scene but zone not determined - create generic TWC device
+                # All TWC scenes without zone will use this same identifier
                 device_identifier = "tywell_control"
                 device_name = self._get_translated_device_name("tywell_control", None)
                 # Try to find any Tywell Control device
@@ -3680,6 +3714,7 @@ class HAScene(Scene, HAEntity):
                 via_device_id = gateway_device_id
             
             # Create DeviceInfo for virtual device grouping TWC scenes
+            # IMPORTANT: All TWC scenes must use the same device_identifier to be grouped
             info: DeviceInfo = {
                 "identifiers": {(DOMAIN, device_identifier)},
                 "name": device_name,
@@ -3690,6 +3725,14 @@ class HAScene(Scene, HAEntity):
             # Link to physical device or gateway
             if via_device_id:
                 info["via_device"] = (DOMAIN, via_device_id)
+            
+            LOGGER.debug(
+                "TWC scene device_info: scene=%s, is_twc=%s, zone=%s, device_identifier=%s",
+                scene_name,
+                is_twc,
+                zone_key,
+                device_identifier,
+            )
             
             return info
         else:
