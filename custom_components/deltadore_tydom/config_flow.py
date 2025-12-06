@@ -1071,16 +1071,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> OptionsFlow:
         """Create the options flow."""
-        return OptionsFlowHandler()
+        return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Option flow to configure zones at any time."""
 
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self._config_entry = config_entry
+
     @property
-    def config_entry(self):
+    def config_entry(self) -> config_entries.ConfigEntry | None:
         """Config entry."""
-        return self.hass.config_entries.async_get_entry(self.handler)
+        return self._config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Show menu to choose between configuration and actions."""
