@@ -1,6 +1,7 @@
 """Home assistant entites."""
 
 from typing import Any
+import asyncio
 import inspect
 import math
 from datetime import datetime
@@ -4202,7 +4203,6 @@ class HAGroup(ButtonEntity, HAEntity):
 
     _attr_should_poll = False
     _attr_has_entity_name = True
-    _attr_icon = "mdi:group"
 
     def __init__(self, device: TydomGroup, hass) -> None:
         """Initialize HAGroup."""
@@ -4211,8 +4211,19 @@ class HAGroup(ButtonEntity, HAEntity):
         self._device._ha_device = self  # type: ignore[assignment]
         self._attr_unique_id = f"{self._device.device_id}_group"
         
-        # Get usage for translation key
+        # Get usage for translation key and icon
         group_usage = getattr(self._device, "group_usage", None) or ""
+        
+        # Set icon based on usage
+        usage_icons = {
+            "light": "mdi:lightbulb-group",
+            "shutter": "mdi:window-shutter",
+            "awning": "mdi:window-shutter-open",
+            "plug": "mdi:power-socket-eu",
+            "heating": "mdi:radiator",
+            "alarm": "mdi:shield-home",
+        }
+        self._attr_icon = usage_icons.get(group_usage, "mdi:group")
         
         # Create entity description with translation key
         translation_key = f"group_{group_usage}" if group_usage else None
@@ -4280,11 +4291,69 @@ class HAGroup(ButtonEntity, HAEntity):
     async def async_press(self) -> None:
         """Handle the button press.
         
-        For now, groups don't have a direct action, but they can be used
-        to activate scenarios on the group.
+        Performs an action on all devices in the group based on the group usage:
+        - shutter/awning: Open all covers
+        - light: Turn on all lights
+        - plug: Turn on all plugs
+        - heating: Not implemented (would need specific commands)
+        - alarm: Not implemented (would need specific commands)
         """
-        LOGGER.debug("Group %s button pressed", self._device.device_name)
-        # TODO: Implement group actions when needed
+        group_usage = getattr(self._device, "group_usage", None) or ""
+        hub_instance = self._get_hub()
+        
+        if not hub_instance or not hasattr(hub_instance, "devices"):
+            LOGGER.warning("Cannot control group %s: hub not available", self._device.device_name)
+            return
+        
+        LOGGER.info("Group %s (%s) button pressed - controlling %d device(s)", 
+                   self._device.device_name, group_usage, len(self._device.device_ids))
+        
+        # Control all devices in the group based on usage
+        tasks = []
+        for device_id in self._device.device_ids:
+            device = hub_instance.devices.get(device_id)
+            if not device:
+                continue
+            
+            try:
+                if group_usage in ("shutter", "awning"):
+                    # Open all covers
+                    if hasattr(device, "up"):
+                        tasks.append(device.up())
+                    elif hasattr(device, "open"):
+                        tasks.append(device.open())
+                elif group_usage == "light":
+                    # Turn on all lights
+                    if hasattr(device, "turn_on"):
+                        tasks.append(device.turn_on(None))  # None = toggle or default brightness
+                    elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                        # Generic light control
+                        tasks.append(device._tydom_client.put_devices_data(
+                            device._id, device._endpoint, "levelCmd", "ON"
+                        ))
+                elif group_usage == "plug":
+                    # Turn on all plugs
+                    if hasattr(device, "turn_on"):
+                        tasks.append(device.turn_on())
+                    elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                        # Generic plug control
+                        tasks.append(device._tydom_client.put_devices_data(
+                            device._id, device._endpoint, "levelCmd", "ON"
+                        ))
+            except Exception as e:
+                LOGGER.warning(
+                    "Error controlling device %s in group %s: %s",
+                    device_id,
+                    self._device.device_name,
+                    e,
+                )
+        
+        # Execute all commands concurrently
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            LOGGER.debug("Group %s control completed", self._device.device_name)
+        else:
+            LOGGER.warning("No devices could be controlled for group %s", self._device.device_name)
 
     async def async_activate_scenario(self, scenario_id: str) -> None:
         """Activate a scenario on this group."""
