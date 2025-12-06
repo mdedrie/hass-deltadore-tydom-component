@@ -1113,6 +1113,10 @@ class HATydom(UpdateEntity, HAEntity):
         self._attr_unique_id = f"{self._device.device_id}"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
+        # Track which protocol/geoloc/clock sensors have been created to avoid duplicates
+        self._created_protocol_sensors: set[str] = set()
+        self._created_geoloc_sensors: set[str] = set()
+        self._created_clock_sensors: set[str] = set()
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -1239,53 +1243,60 @@ class HATydom(UpdateEntity, HAEntity):
                     # Create binary sensors for key protocol attributes
                     for attr in ["available", "installed", "ready"]:
                         if attr in protocol:
-                            protocol_sensor = ProtocolBinarySensor(
-                                self._device,
-                                protocol_name,
-                                protocol,
-                                attr,
-                                self.hass,
-                            )
-                            sensors.append(protocol_sensor)
-                            LOGGER.debug(
-                                "Created protocol sensor: %s.%s.%s",
-                                protocol_name,
-                                attr,
-                                self._device.device_id,
-                            )
+                            # Create unique key for this sensor to avoid duplicates
+                            sensor_key = f"protocol_{protocol_name.lower()}_{attr}"
+                            if sensor_key not in self._created_protocol_sensors:
+                                protocol_sensor = ProtocolBinarySensor(
+                                    self._device,
+                                    protocol_name,
+                                    protocol,
+                                    attr,
+                                    self.hass,
+                                )
+                                sensors.append(protocol_sensor)
+                                self._created_protocol_sensors.add(sensor_key)
+                                LOGGER.debug(
+                                    "Created protocol sensor: %s.%s.%s",
+                                    protocol_name,
+                                    attr,
+                                    self._device.device_id,
+                                )
         
         # Add geolocation sensors if geoloc data is available
         if hasattr(self._device, "geoloc") and isinstance(self._device.geoloc, dict):
             geoloc = self._device.geoloc
-            if "longitude" in geoloc:
+            if "longitude" in geoloc and "longitude" not in self._created_geoloc_sensors:
                 longitude_sensor = GeolocationSensor(
                     self._device,
                     "longitude",
                     self.hass,
                 )
                 sensors.append(longitude_sensor)
+                self._created_geoloc_sensors.add("longitude")
                 LOGGER.debug("Created geolocation longitude sensor")
             
-            if "latitude" in geoloc:
+            if "latitude" in geoloc and "latitude" not in self._created_geoloc_sensors:
                 latitude_sensor = GeolocationSensor(
                     self._device,
                     "latitude",
                     self.hass,
                 )
                 sensors.append(latitude_sensor)
+                self._created_geoloc_sensors.add("latitude")
                 LOGGER.debug("Created geolocation latitude sensor")
         
         # Add clock sensors if clock data is available
         if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
             clock = self._device.clock
             for attr in ["clock", "source", "timezone", "summerOffset"]:
-                if attr in clock:
+                if attr in clock and attr not in self._created_clock_sensors:
                     clock_sensor = ClockSensor(
                         self._device,
                         attr,
                         self.hass,
                     )
                     sensors.append(clock_sensor)
+                    self._created_clock_sensors.add(attr)
                     LOGGER.debug("Created clock sensor: %s", attr)
         
         # Add system status binary sensors and sensors
