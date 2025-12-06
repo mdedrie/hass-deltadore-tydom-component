@@ -1228,11 +1228,15 @@ class HATydom(UpdateEntity, HAEntity):
         await self._device.async_trigger_firmware_update()
 
     def get_sensors(self):
-        """Get available sensors for this entity, including protocol sensors."""
+        """Get available sensors for this entity, including protocol sensors.
+        
+        Returns only sensors that haven't been created yet to avoid duplicates.
+        """
         sensors = []
         
-        # Get standard sensors from parent class
-        sensors.extend(super().get_sensors())
+        # Get standard sensors from parent class (only new ones)
+        new_standard_sensors = super().get_sensors()
+        sensors.extend(new_standard_sensors)
         
         # Add protocol binary sensors if protocols data is available
         if hasattr(self._device, "protocols") and isinstance(self._device.protocols, list):
@@ -1256,48 +1260,63 @@ class HATydom(UpdateEntity, HAEntity):
                                 sensors.append(protocol_sensor)
                                 self._created_protocol_sensors.add(sensor_key)
                                 LOGGER.debug(
-                                    "Created protocol sensor: %s.%s.%s",
+                                    "Created protocol sensor: %s.%s.%s (key: %s)",
                                     protocol_name,
                                     attr,
                                     self._device.device_id,
+                                    sensor_key,
+                                )
+                            else:
+                                LOGGER.debug(
+                                    "Skipping duplicate protocol sensor: %s (already created)",
+                                    sensor_key,
                                 )
         
         # Add geolocation sensors if geoloc data is available
         if hasattr(self._device, "geoloc") and isinstance(self._device.geoloc, dict):
             geoloc = self._device.geoloc
-            if "longitude" in geoloc and "longitude" not in self._created_geoloc_sensors:
-                longitude_sensor = GeolocationSensor(
-                    self._device,
-                    "longitude",
-                    self.hass,
-                )
-                sensors.append(longitude_sensor)
-                self._created_geoloc_sensors.add("longitude")
-                LOGGER.debug("Created geolocation longitude sensor")
+            if "longitude" in geoloc:
+                if "longitude" not in self._created_geoloc_sensors:
+                    longitude_sensor = GeolocationSensor(
+                        self._device,
+                        "longitude",
+                        self.hass,
+                    )
+                    sensors.append(longitude_sensor)
+                    self._created_geoloc_sensors.add("longitude")
+                    LOGGER.debug("Created geolocation longitude sensor")
+                else:
+                    LOGGER.debug("Skipping duplicate geolocation longitude sensor")
             
-            if "latitude" in geoloc and "latitude" not in self._created_geoloc_sensors:
-                latitude_sensor = GeolocationSensor(
-                    self._device,
-                    "latitude",
-                    self.hass,
-                )
-                sensors.append(latitude_sensor)
-                self._created_geoloc_sensors.add("latitude")
-                LOGGER.debug("Created geolocation latitude sensor")
+            if "latitude" in geoloc:
+                if "latitude" not in self._created_geoloc_sensors:
+                    latitude_sensor = GeolocationSensor(
+                        self._device,
+                        "latitude",
+                        self.hass,
+                    )
+                    sensors.append(latitude_sensor)
+                    self._created_geoloc_sensors.add("latitude")
+                    LOGGER.debug("Created geolocation latitude sensor")
+                else:
+                    LOGGER.debug("Skipping duplicate geolocation latitude sensor")
         
         # Add clock sensors if clock data is available
         if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
             clock = self._device.clock
             for attr in ["clock", "source", "timezone", "summerOffset"]:
-                if attr in clock and attr not in self._created_clock_sensors:
-                    clock_sensor = ClockSensor(
-                        self._device,
-                        attr,
-                        self.hass,
-                    )
-                    sensors.append(clock_sensor)
-                    self._created_clock_sensors.add(attr)
-                    LOGGER.debug("Created clock sensor: %s", attr)
+                if attr in clock:
+                    if attr not in self._created_clock_sensors:
+                        clock_sensor = ClockSensor(
+                            self._device,
+                            attr,
+                            self.hass,
+                        )
+                        sensors.append(clock_sensor)
+                        self._created_clock_sensors.add(attr)
+                        LOGGER.debug("Created clock sensor: %s", attr)
+                    else:
+                        LOGGER.debug("Skipping duplicate clock sensor: %s", attr)
         
         # Add system status binary sensors and sensors
         # These are created automatically by get_sensors() from parent class
