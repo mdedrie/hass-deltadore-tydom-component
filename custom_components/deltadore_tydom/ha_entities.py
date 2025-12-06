@@ -3,6 +3,7 @@
 from typing import Any
 import inspect
 import math
+from datetime import datetime
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -755,14 +756,50 @@ class ClockSensor(SensorEntity):
         self.entity_description = entity_description
 
     @property
-    def native_value(self) -> str | int | None:
+    def native_value(self) -> datetime | str | int | None:
         """Return the clock value."""
         if hasattr(self._device, "clock") and isinstance(self._device.clock, dict):
             value = self._device.clock.get(self._attribute)
             if value is not None:
                 if self._attribute == "clock":
-                    # Return ISO format timestamp
-                    return str(value)
+                    # Return datetime object for TIMESTAMP device class
+                    try:
+                        # Try to parse the value as ISO format datetime
+                        if isinstance(value, str):
+                            # Parse ISO format string (e.g., "2025-12-06T01:27:43+01:00")
+                            # Try datetime.fromisoformat first (Python 3.7+)
+                            try:
+                                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                            except (ValueError, AttributeError):
+                                # Fallback: try to parse manually or use strptime
+                                # Handle common ISO formats
+                                for fmt in [
+                                    "%Y-%m-%dT%H:%M:%S%z",
+                                    "%Y-%m-%dT%H:%M:%S.%f%z",
+                                    "%Y-%m-%d %H:%M:%S%z",
+                                ]:
+                                    try:
+                                        return datetime.strptime(value, fmt)
+                                    except ValueError:
+                                        continue
+                                # Last resort: try to parse as timestamp if it's numeric
+                                try:
+                                    return datetime.fromtimestamp(float(value))
+                                except (ValueError, TypeError):
+                                    raise ValueError(f"Unable to parse datetime string: {value}")
+                        elif isinstance(value, (int, float)):
+                            # If it's a timestamp, convert to datetime
+                            return datetime.fromtimestamp(value)
+                        else:
+                            # Fallback: try to convert to string and parse
+                            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                    except (ValueError, TypeError, OverflowError) as e:
+                        LOGGER.warning(
+                            "Failed to parse clock value '%s' as datetime: %s",
+                            value,
+                            e,
+                        )
+                        return None
                 elif self._attribute == "timezone":
                     # Return timezone offset in minutes
                     try:
@@ -1732,7 +1769,8 @@ class HASmoke(BinarySensorEntity, HAEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         attrs: dict[str, Any] = {}
-        return self._enrich_extra_state_attributes(attrs)
+        # HASmoke doesn't need scene enrichment, just return basic attributes
+        return attrs
 
 
 class HaClimate(ClimateEntity, HAEntity):

@@ -647,7 +647,7 @@ class TydomGroup(TydomDevice):
         )
         self.group_id = group_id
         self.device_ids = device_ids
-        self.device_name = name
+        # Note: device_name is already set by parent class TydomDevice via the 'name' parameter
 
     @property
     def device_id(self) -> str:
