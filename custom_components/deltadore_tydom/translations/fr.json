@@ -248,6 +248,24 @@
                 "action_name": {
                     "name": "Nom de l'action"
                 }
+            },
+            "group_light": {
+                "name": "Groupe Lumières"
+            },
+            "group_shutter": {
+                "name": "Groupe Volets"
+            },
+            "group_awning": {
+                "name": "Groupe Stores"
+            },
+            "group_plug": {
+                "name": "Groupe Prises"
+            },
+            "group_heating": {
+                "name": "Groupe Chauffage"
+            },
+            "group_alarm": {
+                "name": "Groupe Alarme"
             }
         },
         "number": {

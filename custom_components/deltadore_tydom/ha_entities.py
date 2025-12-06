@@ -73,7 +73,7 @@ from homeassistant.components.weather import (
 )
 from homeassistant.components.scene import Scene
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.event import EventEntity
@@ -3707,7 +3707,7 @@ class HAScene(Scene, HAEntity):
                 self._device.device_name,
             )
             # Fallback: return None to let Home Assistant handle it (should not happen in normal operation)
-            return None
+        return None
         
         # Check if this is a TWC scene
         scene_name = self._device.device_name
@@ -4210,6 +4210,18 @@ class HAGroup(ButtonEntity, HAEntity):
         self._device = device
         self._device._ha_device = self  # type: ignore[assignment]
         self._attr_unique_id = f"{self._device.device_id}_group"
+        
+        # Get usage for translation key
+        group_usage = getattr(self._device, "group_usage", None) or ""
+        
+        # Create entity description with translation key
+        translation_key = f"group_{group_usage}" if group_usage else None
+        entity_description = ButtonEntityDescription(
+            key=f"group_{self._device.device_id}",
+            name=self._device.device_name,
+            translation_key=translation_key,
+        )
+        self.entity_description = entity_description
         self._attr_name = self._device.device_name
 
     @property

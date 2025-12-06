@@ -633,6 +633,7 @@ class TydomGroup(TydomDevice):
         group_id: str,
         name: str,
         device_ids: list[str],
+        usage: str | None = None,
     ):
         """Initialize a TydomGroup."""
         super().__init__(
@@ -647,6 +648,7 @@ class TydomGroup(TydomDevice):
         )
         self.group_id = group_id
         self.device_ids = device_ids
+        self.group_usage = usage  # Store usage for translation key
         # Note: device_name is already set by parent class TydomDevice via the 'name' parameter
 
     @property

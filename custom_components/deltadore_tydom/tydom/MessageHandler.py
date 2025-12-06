@@ -1000,29 +1000,13 @@ class MessageHandler:
                         group_usage = group_meta.get("usage", "")
                         config_name = group_meta.get("name", "")
                         
-                        # Create descriptive name based on usage
-                        usage_names_fr = {
-                            "light": "Lumières",
-                            "shutter": "Volets",
-                            "awning": "Stores",
-                            "plug": "Prises",
-                            "heating": "Chauffage",
-                            "alarm": "Alarme",
-                        }
-                        
-                        if group_usage and group_usage in usage_names_fr:
-                            # Use descriptive French name based on usage
-                            group_name = f"Groupe {usage_names_fr[group_usage]}"
-                        elif config_name and config_name != f"Group {group_id}" and config_name != "TOTAL":
-                            # Use name from config if it's not the default or "TOTAL"
+                        # Use config name if available and not default, otherwise use generic name
+                        # The actual display name will come from translation_key in HAGroup
+                        if config_name and config_name != f"Group {group_id}" and config_name != "TOTAL":
                             group_name = config_name
                         else:
-                            # Fallback: use usage if available, otherwise group ID
-                            if group_usage:
-                                # Try to capitalize usage as fallback
-                                group_name = f"Groupe {group_usage.capitalize()}"
-                            else:
-                                group_name = f"Groupe {group_id}"
+                            # Use generic name - translation will be handled by translation_key
+                            group_name = f"Group {group_id}"
                         
                         # Store group data
                         groups_data[group_id_str] = {
@@ -1039,6 +1023,7 @@ class MessageHandler:
                             group_id_str,
                             group_name,
                             device_ids,
+                            usage=group_usage,  # Pass usage for translation
                         )
                         devices.append(group_device)
                         

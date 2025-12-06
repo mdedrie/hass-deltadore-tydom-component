@@ -247,6 +247,24 @@
                 "action_name": {
                     "name": "Action name"
                 }
+            },
+            "group_light": {
+                "name": "Light Group"
+            },
+            "group_shutter": {
+                "name": "Shutter Group"
+            },
+            "group_awning": {
+                "name": "Awning Group"
+            },
+            "group_plug": {
+                "name": "Plug Group"
+            },
+            "group_heating": {
+                "name": "Heating Group"
+            },
+            "group_alarm": {
+                "name": "Alarm Group"
             }
         },
         "number": {
