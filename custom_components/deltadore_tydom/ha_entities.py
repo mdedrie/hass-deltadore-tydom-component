@@ -4070,7 +4070,7 @@ class HAScene(Scene, HAEntity):
         )
         
         # Update extra state attributes to reflect the new entities
-        await self.async_update_ha_state()
+        self.async_write_ha_state()
 
     async def async_update(self, **kwargs: Any) -> None:
         """Update the scene with new entities.
