@@ -4333,8 +4333,11 @@ class HAGroup(ButtonEntity, HAEntity):
                         ))
                 elif group_usage == "plug":
                     # Turn on all plugs
+                    # Note: Some plug devices might be TydomLight instances which require brightness parameter
                     if hasattr(device, "turn_on"):
-                        tasks.append(device.turn_on())
+                        # Pass None as brightness to handle both TydomLight (requires brightness) 
+                        # and other devices (brightness is optional)
+                        tasks.append(device.turn_on(None))
                     elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
                         # Generic plug control
                         tasks.append(device._tydom_client.put_devices_data(
