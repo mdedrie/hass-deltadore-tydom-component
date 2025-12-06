@@ -3821,7 +3821,7 @@ class HAScene(Scene, HAEntity):
                 self._device.device_name,
             )
             # Fallback: return None to let Home Assistant handle it (should not happen in normal operation)
-        return None
+            return None
         
         # Check if this is a TWC scene
         scene_name = self._device.device_name

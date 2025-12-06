@@ -256,7 +256,12 @@ class TydomClient:
         session = async_create_clientsession(self._hass, False)
 
         try:
-            async with async_timeout.timeout(TIMEOUT_QUICK_REQUEST):
+            # Use TIMEOUT_WEBSOCKET_CONNECT instead of TIMEOUT_QUICK_REQUEST because
+            # the initial GET request is part of the WebSocket connection process:
+            # it obtains the digest challenge, calculates authentication, and establishes
+            # the WebSocket connection. This can take longer, especially on first connection
+            # or with network latency.
+            async with async_timeout.timeout(TIMEOUT_WEBSOCKET_CONNECT):
                 response = await session.request(
                     method="GET",
                     url=f"https://{self._host}:443/mediation/client?mac={self._mac}&appli=1",
