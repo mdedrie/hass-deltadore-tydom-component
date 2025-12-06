@@ -140,6 +140,129 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     
     hass.services.async_register(DOMAIN, "create_scene", handle_create_scene)
     
+    # Register service for controlling groups
+    async def handle_control_group(call):
+        """Handle control_group service call."""
+        from homeassistant.const import ATTR_ENTITY_ID
+        from homeassistant.helpers import entity_registry as er
+        
+        entity_id = call.data.get(ATTR_ENTITY_ID)
+        action = call.data.get("action")
+        position = call.data.get("position")
+        
+        if not entity_id or not action:
+            LOGGER.error("control_group requires entity_id and action")
+            return
+        
+        # Get the entity
+        entity_registry = er.async_get(hass)
+        entity_entry = entity_registry.async_get(entity_id)
+        
+        if not entity_entry:
+            LOGGER.error("Entity %s not found", entity_id)
+            return
+        
+        # Get the hub
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.error("No Tydom hub found")
+            return
+        
+        # Find the entity in the hub
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            if hasattr(tydom_hub, "ha_devices") and entity_id in tydom_hub.ha_devices:
+                ha_device = tydom_hub.ha_devices[entity_id]
+                if hasattr(ha_device, "_device") and hasattr(ha_device._device, "group_id"):
+                    # It's a HAGroup entity
+                    try:
+                        if action == "turn_on":
+                            if hasattr(ha_device, "async_turn_on"):
+                                await ha_device.async_turn_on()
+                        elif action == "turn_off":
+                            if hasattr(ha_device, "async_turn_off"):
+                                await ha_device.async_turn_off()
+                        elif action == "open":
+                            if hasattr(ha_device, "async_open_cover"):
+                                await ha_device.async_open_cover()
+                        elif action == "close":
+                            if hasattr(ha_device, "async_close_cover"):
+                                await ha_device.async_close_cover()
+                        elif action == "stop":
+                            if hasattr(ha_device, "async_stop_cover"):
+                                await ha_device.async_stop_cover()
+                        elif action == "set_position":
+                            if hasattr(ha_device, "async_set_cover_position"):
+                                if position is None:
+                                    LOGGER.error("position is required for set_position action")
+                                    return
+                                await ha_device.async_set_cover_position(position=position)
+                        else:
+                            LOGGER.error("Unknown action: %s", action)
+                            return
+                        LOGGER.info("Action %s executed on group %s", action, entity_id)
+                        return
+                    except Exception as e:
+                        LOGGER.error("Error executing action %s on group %s: %s", action, entity_id, e, exc_info=True)
+                        return
+        
+        LOGGER.error("Group entity %s not found in any hub", entity_id)
+    
+    hass.services.async_register(DOMAIN, "control_group", handle_control_group)
+    
+    # Register service for getting group devices
+    async def handle_get_group_devices(call):
+        """Handle get_group_devices service call."""
+        from homeassistant.const import ATTR_ENTITY_ID
+        from homeassistant.helpers import entity_registry as er
+        
+        entity_id = call.data.get(ATTR_ENTITY_ID)
+        
+        if not entity_id:
+            LOGGER.error("get_group_devices requires entity_id")
+            return
+        
+        # Get the entity
+        entity_registry = er.async_get(hass)
+        entity_entry = entity_registry.async_get(entity_id)
+        
+        if not entity_entry:
+            LOGGER.error("Entity %s not found", entity_id)
+            return
+        
+        # Get the hub
+        if DOMAIN not in hass.data or not hass.data[DOMAIN]:
+            LOGGER.error("No Tydom hub found")
+            return
+        
+        # Find the entity in the hub
+        for entry_id, tydom_hub in hass.data[DOMAIN].items():
+            if hasattr(tydom_hub, "ha_devices") and entity_id in tydom_hub.ha_devices:
+                ha_device = tydom_hub.ha_devices[entity_id]
+                if hasattr(ha_device, "_device") and hasattr(ha_device._device, "group_id"):
+                    # It's a HAGroup entity
+                    group_device = ha_device._device
+                    devices_info = []
+                    
+                    # Get device names from hub
+                    if hasattr(tydom_hub, "devices"):
+                        for device_id in group_device.device_ids:
+                            device = tydom_hub.devices.get(device_id)
+                            if device:
+                                device_name = getattr(device, "device_name", None) or f"Device {device_id}"
+                                device_type = getattr(device, "device_type", "unknown")
+                                devices_info.append({
+                                    "device_id": device_id,
+                                    "name": device_name,
+                                    "type": device_type
+                                })
+                    
+                    LOGGER.info("Group %s contains %d devices", entity_id, len(devices_info))
+                    return {"devices": devices_info}
+        
+        LOGGER.error("Group entity %s not found in any hub", entity_id)
+        return {"devices": []}
+    
+    hass.services.async_register(DOMAIN, "get_group_devices", handle_get_group_devices)
+    
     # Panel and API routes removed - no longer needed
     
     return True

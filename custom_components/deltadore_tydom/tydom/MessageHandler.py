@@ -9,7 +9,7 @@ from functools import partial
 from http.client import HTTPMessage, LineTooLong
 from http.client import HTTPResponse as CoreHTTPResponse
 from io import BytesIO
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from ..const import LOGGER
 from .tydom_devices import (
@@ -1120,7 +1120,8 @@ class HTTPResponse:
 
 def _parse_response(raw_message: bytes) -> HTTPResponse:
     sock = BytesIOSocket(raw_message)
-    response = CoreHTTPResponse(sock)  # type: ignore[arg-type]
+    # CoreHTTPResponse expects a socket, but BytesIOSocket implements the interface
+    response = CoreHTTPResponse(cast(Any, sock))
     response.begin()
 
     return HTTPResponse(
@@ -1149,7 +1150,8 @@ class _FakeHTTPRequest(CoreHTTPResponse):
 
         if not version.startswith("HTTP/"):
             if hasattr(self, "_close_conn"):
-                self._close_conn()  # type: ignore[attr-defined]
+                # _close_conn is a dynamic attribute added by http.client
+                getattr(self, "_close_conn")()
             raise ValueError(line)
 
         command, path = words[:2]
@@ -1182,7 +1184,8 @@ def parse_request(raw_request: bytes) -> HTTPRequest:
 
     """
     sock = BytesIOSocket(raw_request)
-    request = _FakeHTTPRequest(sock)  # type: ignore[arg-type]
+    # _FakeHTTPRequest inherits from CoreHTTPResponse which expects a socket
+    request = _FakeHTTPRequest(cast(Any, sock))
     request.begin()
 
     return HTTPRequest(

@@ -28,6 +28,7 @@ from homeassistant.const import (
     PERCENTAGE,
 )
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers import device_registry as dr
 from homeassistant.components.cover import (
     ATTR_POSITION,
     ATTR_TILT_POSITION,
@@ -146,7 +147,14 @@ class HAEntity:
         return None
 
     def _enrich_device_info(self, info: DeviceInfo) -> DeviceInfo:
-        """Enrich device info with via_device link to gateway."""
+        """Enrich device info with via_device link to gateway.
+        
+        Note: If area information becomes available from Tydom API
+        (via /areas/data endpoint), we could add 'suggested_area' to DeviceInfo
+        to automatically suggest areas for devices. This would improve
+        device organization in Home Assistant's Area Registry.
+        See: https://developers.home-assistant.io/docs/area_registry_index
+        """
         gateway_device_id = self._get_tydom_gateway_device_id()
         if gateway_device_id is not None and self._device is not None:
             if gateway_device_id != self._device.device_id:
@@ -154,14 +162,33 @@ class HAEntity:
         return info
 
     async def async_added_to_hass(self) -> None:
-        """Run when this Entity has been added to HA."""
+        """Run when this Entity has been added to HA.
+        
+        This lifecycle method is only called if the entity is actually added to
+        Home Assistant (i.e., not disabled). This is the correct place to register
+        entity references and callbacks, as per Home Assistant best practices.
+        
+        References should NOT be registered in __init__ because disabled entities
+        will not have async_added_to_hass called, preventing proper cleanup.
+        """
         if self._device is not None:
-            self._device.register_callback(self.async_write_ha_state)  # type: ignore[attr-defined]
+            # Register callback for state updates
+            self._device.register_callback(self.async_write_ha_state)
+            # Register entity reference (only if entity is actually added)
+            self._device._ha_device = self
 
     async def async_will_remove_from_hass(self) -> None:
-        """Entity being removed from hass."""
+        """Entity being removed from hass.
+        
+        Clean up entity references and callbacks when the entity is removed.
+        This ensures proper cleanup even if the entity was disabled.
+        """
         if self._device is not None:
-            self._device.remove_callback(self.async_write_ha_state)  # type: ignore[attr-defined]
+            # Remove callback
+            self._device.remove_callback(self.async_write_ha_state)
+            # Clear entity reference if it points to this entity
+            if hasattr(self._device, "_ha_device") and self._device._ha_device is self:
+                self._device._ha_device = None
 
     @property
     def available(self) -> bool:
@@ -326,8 +353,18 @@ class GenericSensor(SensorEntity):
         attribute: str,
         unit_of_measurement: str | None,
     ):
-        """Initialize the sensor."""
+        """Initialize the sensor.
+        
+        The unique_id is constructed from device_id (which is based on endpoint_id + device_id
+        from the Tydom API, providing a stable unique identifier) combined with the sensor name.
+        This follows Home Assistant Entity Registry best practices:
+        - Does not include domain or platform type (added automatically by HA)
+        - Uses stable identifiers from the device API
+        - Combines base unique_id with entity-specific identifier for multi-entity devices
+        """
         self._device = device
+        # unique_id format: {device_id}_{entity_name}
+        # device_id is stable and unique (endpoint_id + "_" + device_id from Tydom API)
         self._attr_unique_id = f"{self._device.device_id}_{name}"
         self._attr_name = name
         self._attribute = attribute
@@ -514,14 +551,25 @@ class GenericSensor(SensorEntity):
         return True
 
     async def async_added_to_hass(self):
-        """Run when this Entity has been added to HA."""
+        """Run when this Entity has been added to HA.
+        
+        This lifecycle method is only called if the entity is actually added to
+        Home Assistant (i.e., not disabled). Register callbacks and entity
+        references here, not in __init__.
+        """
         # Sensors should also register callbacks to HA when their state changes
         self._device.register_callback(self.async_write_ha_state)
+        # Register entity reference (only if entity is actually added)
+        if self._device is not None:
+            self._device._ha_device = self
 
     async def async_will_remove_from_hass(self):
         """Entity being removed from hass."""
         # The opposite of async_added_to_hass. Remove any registered call backs here.
         self._device.remove_callback(self.async_write_ha_state)
+        # Clear entity reference if it points to this entity
+        if self._device is not None and hasattr(self._device, "_ha_device") and self._device._ha_device is self:
+            self._device._ha_device = None
 
 
 class BinarySensorBase(BinarySensorEntity):
@@ -607,14 +655,25 @@ class BinarySensorBase(BinarySensorEntity):
         return info
 
     async def async_added_to_hass(self):
-        """Run when this Entity has been added to HA."""
+        """Run when this Entity has been added to HA.
+        
+        This lifecycle method is only called if the entity is actually added to
+        Home Assistant (i.e., not disabled). Register callbacks and entity
+        references here, not in __init__.
+        """
         # Sensors should also register callbacks to HA when their state changes
         self._device.register_callback(self.async_write_ha_state)
+        # Register entity reference (only if entity is actually added)
+        if self._device is not None:
+            self._device._ha_device = self
 
     async def async_will_remove_from_hass(self):
         """Entity being removed from hass."""
         # The opposite of async_added_to_hass. Remove any registered call backs here.
         self._device.remove_callback(self.async_write_ha_state)
+        # Clear entity reference if it points to this entity
+        if self._device is not None and hasattr(self._device, "_ha_device") and self._device._ha_device is self:
+            self._device._ha_device = None
 
 
 class GenericBinarySensor(BinarySensorBase):
@@ -861,12 +920,23 @@ class ClockSensor(SensorEntity):
         return True
 
     async def async_added_to_hass(self):
-        """Run when this Entity has been added to HA."""
+        """Run when this Entity has been added to HA.
+        
+        This lifecycle method is only called if the entity is actually added to
+        Home Assistant (i.e., not disabled). Register callbacks and entity
+        references here, not in __init__.
+        """
         self._device.register_callback(self.async_write_ha_state)
+        # Register entity reference (only if entity is actually added)
+        if self._device is not None:
+            self._device._ha_device = self
 
     async def async_will_remove_from_hass(self):
         """Entity being removed from hass."""
         self._device.remove_callback(self.async_write_ha_state)
+        # Clear entity reference if it points to this entity
+        if self._device is not None and hasattr(self._device, "_ha_device") and self._device._ha_device is self:
+            self._device._ha_device = None
 
 
 class GeolocationSensor(SensorEntity):
@@ -965,12 +1035,23 @@ class GeolocationSensor(SensorEntity):
         return True
 
     async def async_added_to_hass(self):
-        """Run when this Entity has been added to HA."""
+        """Run when this Entity has been added to HA.
+        
+        This lifecycle method is only called if the entity is actually added to
+        Home Assistant (i.e., not disabled). Register callbacks and entity
+        references here, not in __init__.
+        """
         self._device.register_callback(self.async_write_ha_state)
+        # Register entity reference (only if entity is actually added)
+        if self._device is not None:
+            self._device._ha_device = self
 
     async def async_will_remove_from_hass(self):
         """Entity being removed from hass."""
         self._device.remove_callback(self.async_write_ha_state)
+        # Clear entity reference if it points to this entity
+        if self._device is not None and hasattr(self._device, "_ha_device") and self._device._ha_device is self:
+            self._device._ha_device = None
 
 
 class ProtocolBinarySensor(BinarySensorBase):
@@ -1107,7 +1188,8 @@ class HATydom(UpdateEntity, HAEntity):
         """Initialize HATydom."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        # Note: _ha_device is set in async_added_to_hass (not in __init__)
+        # to comply with Home Assistant best practices for disabled entities
         self._attr_supported_features = UpdateEntityFeature.INSTALL
         self._attr_device_class = UpdateDeviceClass.FIRMWARE
         self._attr_unique_id = f"{self._device.device_id}"
@@ -1137,9 +1219,9 @@ class HATydom(UpdateEntity, HAEntity):
         if "model" in device_info:
             info["model"] = device_info["model"]
         
-        # Add MAC address if available
+        # Add MAC address if available (using Home Assistant constant)
         if hasattr(self._device, "mac") and self._device.mac:
-            info["connections"] = {("mac", str(self._device.mac))}
+            info["connections"] = {(dr.CONNECTION_NETWORK_MAC, str(self._device.mac))}
         
         # Gateway doesn't need via_device (it's the root device)
         return info
@@ -1452,7 +1534,8 @@ class HAEnergy(SensorEntity, HAEntity):
         """Initialize HAEnergy."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        # Note: _ha_device is set in async_added_to_hass (not in __init__)
+        # to comply with Home Assistant best practices for disabled entities
         self._attr_unique_id = f"{self._device.device_id}_energy"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -1497,7 +1580,7 @@ class HACover(CoverEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_cover"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -1769,7 +1852,7 @@ class HASmoke(BinarySensorEntity, HAEntity):
         """Initialize TydomSmoke."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_smoke"
         self._attr_name = self._device.device_name
         self._state = False
@@ -1841,7 +1924,7 @@ class HaClimate(ClimateEntity, HAEntity):
         super().__init__()
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_climate"
         self._attr_name = self._device.device_name
         self._enable_turn_on_off_backwards_compatibility = False
@@ -2155,7 +2238,7 @@ class HaWindow(CoverEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_cover"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2214,7 +2297,7 @@ class HaDoor(CoverEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_cover"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2270,7 +2353,7 @@ class HaGate(CoverEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_cover"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2368,7 +2451,7 @@ class HaGarage(CoverEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_cover"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2451,7 +2534,7 @@ class HaLight(LightEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_light"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2560,7 +2643,7 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_alarm"
         self._attr_name = self._device.device_name
         self._attr_code_format = CodeFormat.NUMBER
@@ -2698,7 +2781,7 @@ class HaWeather(WeatherEntity, HAEntity):
         """Initialize the sensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_weather"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2761,7 +2844,7 @@ class HaMoisture(BinarySensorEntity, HAEntity):
         """Initialize TydomSmoke."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_moisture"
         self._attr_name = self._device.device_name
         self._state = False
@@ -2799,7 +2882,7 @@ class HaThermo(SensorEntity, HAEntity):
         """Initialize TydomSmoke."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_thermos"
         self._attr_name = self._device.device_name
         self._state = False
@@ -2840,7 +2923,7 @@ class HASensor(SensorEntity, HAEntity):
         """Initialize HASensor."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_sensor"
         self._attr_name = self._device.device_name
         self._registered_sensors = []
@@ -2909,7 +2992,7 @@ class HAScene(Scene, HAEntity):
         """Initialize HAScene."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_scene"
         # Store base name, name with zone will be calculated in async_added_to_hass
         self._base_name = self._device.device_name
@@ -4091,7 +4174,7 @@ class HAMoment(SwitchEntity, HAEntity):
         """Initialize HAMoment."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_moment"
         self._attr_name = self._device.device_name
 
@@ -4114,10 +4197,12 @@ class HAMoment(SwitchEntity, HAEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Resume the moment (turn off suspension)."""
         await self._device.suspend_moment(suspend=False, suspend_to=0)
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Suspend the moment indefinitely."""
         await self._device.suspend_moment(suspend=True, suspend_to=-1)
+        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -4148,7 +4233,7 @@ class HASwitch(SwitchEntity, HAEntity):
         """Initialize HASwitch."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_switch"
         self._attr_name = self._device.device_name
 
@@ -4238,7 +4323,7 @@ class HAGroup(ButtonEntity, HAEntity):
         """Initialize HAGroup."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attr_unique_id = f"{self._device.device_id}_group"
         
         # Get usage for translation key and icon
@@ -4281,6 +4366,7 @@ class HAGroup(ButtonEntity, HAEntity):
         """Return additional state attributes for the group."""
         attrs: dict[str, Any] = {
             "group_id": self._device.group_id,
+            "group_usage": getattr(self._device, "group_usage", None),
             "device_count": len(self._device.device_ids),
         }
         
@@ -4288,10 +4374,12 @@ class HAGroup(ButtonEntity, HAEntity):
         if self._device.device_ids:
             attrs["device_ids"] = self._device.device_ids
             
-            # Try to get device names
+            # Try to get device names and types
             hub_instance = self._get_hub()
             if hub_instance and hasattr(hub_instance, "devices"):
                 device_names = []
+                device_types = []
+                
                 for device_id in self._device.device_ids:
                     # Try to find device by various ID formats
                     found_device = None
@@ -4305,16 +4393,26 @@ class HAGroup(ButtonEntity, HAEntity):
                             break
                     
                     if found_device:
+                        # Get device name
                         device_name = getattr(found_device, "device_name", None)
+                        if not device_name and hasattr(found_device, "productName"):
+                            device_name = getattr(found_device, "productName", None)
                         if device_name:
-                            device_names.append(device_name)
-                        elif hasattr(found_device, "productName"):
-                            product_name = getattr(found_device, "productName", None)
-                            if product_name:
-                                device_names.append(str(product_name))
+                            device_names.append(str(device_name))
+                        else:
+                            device_names.append(f"Device {device_id}")
+                        
+                        # Get device type
+                        device_type = getattr(found_device, "device_type", None)
+                        if device_type:
+                            device_types.append(str(device_type))
+                        else:
+                            device_types.append("unknown")
                 
                 if device_names:
                     attrs["device_names"] = device_names
+                if device_types:
+                    attrs["device_types"] = device_types
         
         return attrs
 
@@ -4388,6 +4486,133 @@ class HAGroup(ButtonEntity, HAEntity):
         else:
             LOGGER.warning("No devices could be controlled for group %s", self._device.device_name)
 
+    async def _control_group_devices(self, action: str, **kwargs: Any) -> None:
+        """Control all devices in the group with a specific action.
+        
+        Args:
+            action: The action to perform (turn_on, turn_off, open, close, stop, set_position)
+            **kwargs: Additional arguments for the action (e.g., position for set_position)
+        """
+        group_usage = getattr(self._device, "group_usage", None) or ""
+        hub_instance = self._get_hub()
+        
+        if not hub_instance or not hasattr(hub_instance, "devices"):
+            LOGGER.warning("Cannot control group %s: hub not available", self._device.device_name)
+            return
+        
+        LOGGER.info(
+            "Group %s (%s) action %s - controlling %d device(s)",
+            self._device.device_name,
+            group_usage,
+            action,
+            len(self._device.device_ids),
+        )
+        
+        tasks = []
+        for device_id in self._device.device_ids:
+            device = hub_instance.devices.get(device_id)
+            if not device:
+                continue
+            
+            try:
+                if group_usage in ("shutter", "awning"):
+                    # Cover control
+                    if action == "open":
+                        if hasattr(device, "up"):
+                            tasks.append(device.up())
+                        elif hasattr(device, "open"):
+                            tasks.append(device.open())
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", "UP"
+                            ))
+                    elif action == "close":
+                        if hasattr(device, "down"):
+                            tasks.append(device.down())
+                        elif hasattr(device, "close"):
+                            tasks.append(device.close())
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", "DOWN"
+                            ))
+                    elif action == "stop":
+                        if hasattr(device, "stop"):
+                            tasks.append(device.stop())
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", "STOP"
+                            ))
+                    elif action == "set_position" and "position" in kwargs:
+                        position = kwargs["position"]
+                        if hasattr(device, "set_position"):
+                            tasks.append(device.set_position(position))
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            # Convert position (0-100) to levelCmd value
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", str(position)
+                            ))
+                elif group_usage in ("light", "plug"):
+                    # Light/plug control
+                    if action == "turn_on":
+                        if hasattr(device, "turn_on"):
+                            # For lights, try to get brightness from kwargs or use None
+                            brightness = kwargs.get("brightness")
+                            tasks.append(device.turn_on(brightness))
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", "ON"
+                            ))
+                    elif action == "turn_off":
+                        if hasattr(device, "turn_off"):
+                            tasks.append(device.turn_off())
+                        elif hasattr(device, "_tydom_client") and hasattr(device, "_id") and hasattr(device, "_endpoint"):
+                            tasks.append(device._tydom_client.put_devices_data(
+                                device._id, device._endpoint, "levelCmd", "OFF"
+                            ))
+            except Exception as e:
+                LOGGER.warning(
+                    "Error controlling device %s in group %s with action %s: %s",
+                    device_id,
+                    self._device.device_name,
+                    action,
+                    e,
+                )
+        
+        # Execute all commands concurrently
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            LOGGER.debug("Group %s action %s completed", self._device.device_name, action)
+        else:
+            LOGGER.warning("No devices could be controlled for group %s with action %s", self._device.device_name, action)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on all devices in the group (for lights/plugs)."""
+        await self._control_group_devices("turn_on", **kwargs)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off all devices in the group (for lights/plugs)."""
+        await self._control_group_devices("turn_off", **kwargs)
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Open all covers in the group (for shutters/awnings)."""
+        await self._control_group_devices("open", **kwargs)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Close all covers in the group (for shutters/awnings)."""
+        await self._control_group_devices("close", **kwargs)
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        """Stop all covers in the group (for shutters/awnings)."""
+        await self._control_group_devices("stop", **kwargs)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Set position for all covers in the group (for shutters/awnings).
+        
+        Args:
+            position: Position (0-100) for the covers
+        """
+        await self._control_group_devices("set_position", **kwargs)
+
     async def async_activate_scenario(self, scenario_id: str) -> None:
         """Activate a scenario on this group."""
         await self._device.activate_scenario(scenario_id)
@@ -4406,7 +4631,7 @@ class HAButton(ButtonEntity, HAEntity):
         """Initialize HAButton."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._action_name = action_name
         self._action_method = action_method
         self._attr_unique_id = f"{self._device.device_id}_button_{action_name}"
@@ -4486,7 +4711,7 @@ class HANumber(NumberEntity, HAEntity):
         """Initialize HANumber."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attribute_name = attribute_name
         self._attr_unique_id = f"{self._device.device_id}_number_{attribute_name}"
         self._attr_name = attribute_name
@@ -4544,7 +4769,7 @@ class HASelect(SelectEntity, HAEntity):
         """Initialize HASelect."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._attribute_name = attribute_name
         self._attr_unique_id = f"{self._device.device_id}_select_{attribute_name}"
         self._attr_name = attribute_name
@@ -4588,7 +4813,7 @@ class HAEvent(EventEntity, HAEntity):
         """Initialize HAEvent."""
         self.hass = hass
         self._device = device
-        self._device._ha_device = self  # type: ignore[assignment]
+        self._device._ha_device = self
         self._event_type = event_type
         self._attr_unique_id = f"{self._device.device_id}_event_{event_type}"
         self._attr_name = event_type

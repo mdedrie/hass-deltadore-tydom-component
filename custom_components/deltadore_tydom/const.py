@@ -149,3 +149,95 @@ def get_polling_interval_for_validity(validity: str | None) -> int | None:
     
     validity_upper = str(validity).upper()
     return VALIDITY_POLLING_INTERVALS.get(validity_upper, None)
+
+
+# Timeout constants (in seconds) for different operation types
+TIMEOUT_QUICK_REQUEST = 5.0  # Fast operations like simple GET requests
+TIMEOUT_NORMAL_REQUEST = 10.0  # Standard operations like PUT, POST
+TIMEOUT_LONG_REQUEST = 30.0  # Long operations like historical data, firmware updates
+TIMEOUT_WEBSOCKET_CONNECT = 10.0  # WebSocket connection timeout
+TIMEOUT_WEBSOCKET_RECEIVE = 5.0  # WebSocket receive timeout
+TIMEOUT_PING = 40.0  # Ping timeout for remote mode
+
+
+class StructuredLogger:
+    """Helper class for structured logging with context."""
+    
+    def __init__(self, logger: Logger):
+        """Initialize structured logger.
+        
+        Args:
+            logger: Base logger instance
+        """
+        self._logger = logger
+    
+    def device_operation(
+        self,
+        level: str,
+        operation: str,
+        device_id: str,
+        **kwargs
+    ) -> None:
+        """Log device operation with structured context.
+        
+        Args:
+            level: Log level (debug, info, warning, error)
+            operation: Operation name (e.g., "create", "update", "delete")
+            device_id: Device identifier
+            **kwargs: Additional context fields
+        """
+        context = " | ".join(f"{k}={v}" for k, v in kwargs.items())
+        message = f"Device operation: {operation} | device_id={device_id}"
+        if context:
+            message += f" | {context}"
+        
+        log_method = getattr(self._logger, level.lower(), self._logger.debug)
+        log_method(message)
+    
+    def connection_event(
+        self,
+        level: str,
+        event: str,
+        **kwargs
+    ) -> None:
+        """Log connection event with structured context.
+        
+        Args:
+            level: Log level (debug, info, warning, error)
+            event: Event name (e.g., "connect", "disconnect", "reconnect")
+            **kwargs: Additional context fields
+        """
+        context = " | ".join(f"{k}={v}" for k, v in kwargs.items())
+        message = f"Connection event: {event}"
+        if context:
+            message += f" | {context}"
+        
+        log_method = getattr(self._logger, level.lower(), self._logger.debug)
+        log_method(message)
+    
+    def api_request(
+        self,
+        level: str,
+        method: str,
+        url: str,
+        **kwargs
+    ) -> None:
+        """Log API request with structured context.
+        
+        Args:
+            level: Log level (debug, info, warning, error)
+            method: HTTP method (GET, POST, PUT, etc.)
+            url: Request URL
+            **kwargs: Additional context fields (status_code, duration, etc.)
+        """
+        context = " | ".join(f"{k}={v}" for k, v in kwargs.items())
+        message = f"API request: {method} {url}"
+        if context:
+            message += f" | {context}"
+        
+        log_method = getattr(self._logger, level.lower(), self._logger.debug)
+        log_method(message)
+
+
+# Create structured logger instance
+STRUCTURED_LOGGER = StructuredLogger(LOGGER)

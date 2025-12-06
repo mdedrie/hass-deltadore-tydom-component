@@ -4,7 +4,7 @@ from __future__ import annotations
 import traceback
 import ipaddress
 import re
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 
@@ -240,7 +240,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 tydom_hub = hub.Hub(
                     self.hass,
-                    None,  # type: ignore[arg-type]
+                    cast(ConfigEntry, None),
                     user_input[CONF_HOST],
                     user_input[CONF_MAC],
                     user_input[CONF_TYDOM_PASSWORD],
@@ -423,7 +423,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 tydom_hub = hub.Hub(
                     self.hass,
-                    None,  # type: ignore[arg-type]
+                    cast(ConfigEntry, None),
                     user_input[CONF_HOST],
                     user_input[CONF_MAC],
                     user_input[CONF_TYDOM_PASSWORD],
@@ -631,7 +631,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Ensure it's working as expected
                 tydom_hub = hub.Hub(
                     self.hass,
-                    None,  # type: ignore[arg-type]
+                    cast(ConfigEntry, None),
                     user_input[CONF_HOST],
                     user_input[CONF_MAC],
                     user_input[CONF_TYDOM_PASSWORD],
@@ -769,7 +769,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Ensure it's working as expected
                 tydom_hub = hub.Hub(
                     self.hass,
-                    None,  # type: ignore[arg-type]
+                    cast(ConfigEntry, None),
                     user_input[CONF_HOST],
                     user_input[CONF_MAC],
                     user_input[CONF_TYDOM_PASSWORD],

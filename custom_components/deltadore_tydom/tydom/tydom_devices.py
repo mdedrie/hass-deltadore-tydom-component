@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from ..const import LOGGER, validate_value_with_metadata
 
@@ -11,13 +11,18 @@ if TYPE_CHECKING:
 
     from .tydom_client import TydomClient
 
+
+class DeviceCallback(Protocol):
+    """Protocol for device callbacks that can be called without arguments."""
+    def __call__(self) -> None: ...
+
 # Import TydomGroup at the end to avoid circular import
 
 
 class TydomDevice:
     """represents a generic device."""
 
-    _ha_device = None
+    _ha_device: Any = None
 
     def __init__(
         self,
@@ -38,7 +43,7 @@ class TydomDevice:
         self._type = device_type
         self._endpoint = endpoint
         self._metadata = metadata
-        self._callbacks = set()
+        self._callbacks: set[DeviceCallback] = set()
         if data is not None:
             for key in data:
                 if isinstance(data[key], dict):
@@ -52,11 +57,11 @@ class TydomDevice:
                 else:
                     setattr(self, key, data[key])
 
-    def register_callback(self, callback: Callable[[], None]) -> None:
+    def register_callback(self, callback: DeviceCallback) -> None:
         """Register callback, called when state changes."""
         self._callbacks.add(callback)
 
-    def remove_callback(self, callback: Callable[[], None]) -> None:
+    def remove_callback(self, callback: DeviceCallback) -> None:
         """Remove previously registered callback."""
         self._callbacks.discard(callback)
 
@@ -657,11 +662,29 @@ class TydomGroup(TydomDevice):
         return self.group_id
 
     async def activate_scenario(self, scenario_id: str) -> None:
-        """Activate a scenario on this group."""
-        # Groups can have scenarios activated on them
-        # This would need to be implemented in tydom_client
+        """Activate a scenario on this group.
+        
+        Args:
+            scenario_id: The scenario ID to activate
+            
+        Raises:
+            Exception: If the activation request fails
+        """
         LOGGER.debug("Activating scenario %s on group %s", scenario_id, self.group_id)
-        # TODO: Implement group scenario activation in tydom_client
+        try:
+            # Use the same activate_scenario method from tydom_client
+            # Scenarios are global, so we can activate them directly
+            await self._tydom_client.activate_scenario(scenario_id)
+            LOGGER.debug("Scenario %s activated on group %s", scenario_id, self.group_id)
+        except Exception as e:
+            LOGGER.error(
+                "Failed to activate scenario %s on group %s: %s",
+                scenario_id,
+                self.group_id,
+                e,
+                exc_info=True,
+            )
+            raise
 
     async def activate(self) -> None:
         """Activate the scene.
@@ -753,12 +776,37 @@ class TydomMoment(TydomDevice):
         Args:
             suspend: True to suspend, False to resume
             suspend_to: Timestamp until which to suspend (-1 for indefinite)
+        
+        Raises:
+            TydomClientApiClientCommunicationError: If the request fails
         """
+        # Calculer suspend_to : 0 pour reprendre, -1 ou timestamp pour suspendre
+        if not suspend:
+            suspend_to = 0
+        
         LOGGER.debug(
             "Suspending moment %s: suspend=%s, suspend_to=%s",
             self.moment_id,
             suspend,
             suspend_to,
         )
-        # TODO: Implement moment suspend/resume in tydom_client
-        # This would likely be a PUT request to /moments/{id} with suspend data
+        
+        try:
+            await self._tydom_client.suspend_moment(self.moment_id, suspend_to)
+            # Mettre à jour l'état local après succès
+            self.suspend_to = suspend_to
+            if hasattr(self, "suspend"):
+                self.suspend = {"to": suspend_to}
+            LOGGER.debug(
+                "Moment %s state updated: suspend_to=%s",
+                self.moment_id,
+                suspend_to,
+            )
+        except Exception as e:
+            LOGGER.error(
+                "Failed to suspend moment %s: %s",
+                self.moment_id,
+                e,
+                exc_info=True,
+            )
+            raise
