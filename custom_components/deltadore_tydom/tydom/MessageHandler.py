@@ -106,18 +106,19 @@ class MessageHandler:
     def remove_reply(self, transaction_id: str) -> None:
         """
         Remove a pending reply to prevent memory leaks.
-        
+
         This should be called when a request times out or fails.
 
         Args:
             transaction_id: The transaction ID of the request to remove.
+
         """
         # Remove from cdata_replies
         for reply in self._cdata_replies[:]:
             if reply["transaction_id"] == transaction_id:
                 self._cdata_replies.remove(reply)
                 break
-        
+
         # Remove from end_reply_events
         self._end_reply_events.pop(transaction_id, None)
         LOGGER.debug("Removed pending reply for transaction_id: %s", transaction_id)
@@ -966,7 +967,7 @@ class MessageHandler:
                     if isinstance(group, dict) and "id" in group:
                         group_id = group.get("id")
                         group_id_str = str(group_id)
-                        
+
                         # Extract device IDs from the group
                         device_ids = []
                         devices_list = group.get("devices", [])
@@ -977,7 +978,7 @@ class MessageHandler:
                                     dev_id = device.get("id")
                                     if dev_id:
                                         device_ids.append(str(dev_id))
-                                    
+
                                     # Also get endpoint IDs as they might be used as device IDs
                                     endpoints = device.get("endpoints", [])
                                     if isinstance(endpoints, list):
@@ -994,12 +995,12 @@ class MessageHandler:
                                                     # Also add epId alone
                                                     if ep_id_str not in device_ids:
                                                         device_ids.append(ep_id_str)
-                        
+
                         # Get group metadata from /configs/file if available
                         group_meta = groups_metadata.get(group_id_str, {})
                         group_usage = group_meta.get("usage", "")
                         config_name = group_meta.get("name", "")
-                        
+
                         # Use config name if available and not default, otherwise use generic name
                         # The actual display name will come from translation_key in HAGroup
                         if config_name and config_name != f"Group {group_id}" and config_name != "TOTAL":
@@ -1007,14 +1008,14 @@ class MessageHandler:
                         else:
                             # Use generic name - translation will be handled by translation_key
                             group_name = f"Group {group_id}"
-                        
+
                         # Store group data
                         groups_data[group_id_str] = {
                             "devices": device_ids,
                             "name": group_name,
                             "usage": group_usage,
                         }
-                        
+
                         # Create TydomGroup device
                         # Import here to avoid circular import
                         from .tydom_devices import TydomGroup
@@ -1026,7 +1027,7 @@ class MessageHandler:
                             usage=group_usage,  # Pass usage for translation
                         )
                         devices.append(group_device)
-                        
+
                         LOGGER.debug(
                             "Created group: %s (%s) with %d device(s)",
                             group_id_str,
@@ -1050,7 +1051,7 @@ class MessageHandler:
                         moment_id = moment.get("id")
                         moment_id_str = str(moment_id)
                         moment_name = moment.get("name", f"Moment {moment_id}")
-                        
+
                         # Create TydomMoment device
                         # Import here to avoid circular import
                         from .tydom_devices import TydomMoment
@@ -1061,7 +1062,7 @@ class MessageHandler:
                             moment,
                         )
                         devices.append(moment_device)
-                        
+
                         LOGGER.debug(
                             "Created moment: %s (%s)",
                             moment_id_str,

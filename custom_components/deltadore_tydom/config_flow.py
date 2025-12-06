@@ -1090,7 +1090,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Show menu to choose between configuration and actions."""
         if self.config_entry is None:
             return self.async_abort(reason="config_entry_not_found")
-        
+
         return self.async_show_menu(
             step_id="init",
             menu_options=["configure", "actions"],
@@ -1247,16 +1247,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Show actions page with reload devices button."""
         if self.config_entry is None:
             return self.async_abort(reason="config_entry_not_found")
-        
+
         _errors = {}
         status_message = ""
-        
+
         # Vérifier si le hub est disponible
         hub_available = (
-            DOMAIN in self.hass.data 
+            DOMAIN in self.hass.data
             and self.config_entry.entry_id in self.hass.data[DOMAIN]
         )
-        
+
         if user_input is not None:
             # Le champ reload_devices est présent et True si l'utilisateur a activé le bouton
             if user_input.get("reload_devices"):
@@ -1272,7 +1272,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 else:
                     _errors["base"] = "hub_not_found"
                     status_message = "hub_not_found"
-        
+
         # Utiliser un champ booléen optionnel
         # Quand l'utilisateur active ce champ et soumet, l'action est déclenchée
         return self.async_show_form(

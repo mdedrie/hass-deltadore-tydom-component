@@ -7,14 +7,16 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from ..const import LOGGER, validate_value_with_metadata
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
 
     from .tydom_client import TydomClient
 
 
 class DeviceCallback(Protocol):
     """Protocol for device callbacks that can be called without arguments."""
-    def __call__(self) -> None: ...
+
+    def __call__(self) -> None:
+        """Call the callback."""
+        ...
 
 # Import TydomGroup at the end to avoid circular import
 
@@ -152,7 +154,7 @@ class TydomShutter(TydomDevice):
         if not is_valid:
             from homeassistant.exceptions import HomeAssistantError
             raise HomeAssistantError(error_msg or f"Valeur invalide: {position}")
-        
+
         await self._tydom_client.put_devices_data(
             self._id, self._endpoint, "position", str(position)
         )
@@ -182,7 +184,7 @@ class TydomShutter(TydomDevice):
     async def set_slope_position(self, position: int) -> None:
         """Set cover to the given position."""
         LOGGER.debug("set roller tilt position (device) to : %s", position)
-        
+
         # Validate value with metadata
         is_valid, error_msg = validate_value_with_metadata(
             self, "slope", position
@@ -317,7 +319,7 @@ class TydomBoiler(TydomDevice):
         if not is_valid:
             from homeassistant.exceptions import HomeAssistantError
             raise HomeAssistantError(error_msg or f"Température invalide: {temperature}")
-        
+
         await self._tydom_client.put_devices_data(
             self._id, self._endpoint, "setpoint", temperature
         )
@@ -391,6 +393,7 @@ class TydomLight(TydomDevice):
     """represents a light."""
 
     async def turn_on(self, brightness) -> None:
+        """Turn on the light with specified brightness."""
         # Validate brightness value with metadata
         if brightness is not None:
             is_valid, error_msg = validate_value_with_metadata(
@@ -663,12 +666,13 @@ class TydomGroup(TydomDevice):
 
     async def activate_scenario(self, scenario_id: str) -> None:
         """Activate a scenario on this group.
-        
+
         Args:
             scenario_id: The scenario ID to activate
-            
+
         Raises:
             Exception: If the activation request fails
+
         """
         LOGGER.debug("Activating scenario %s on group %s", scenario_id, self.group_id)
         try:
@@ -688,20 +692,21 @@ class TydomGroup(TydomDevice):
 
     async def activate(self) -> None:
         """Activate the scene.
-        
+
         Raises:
             Exception: If activation fails, with detailed error information.
+
         """
         scene_id = getattr(self, "scene_id", None) or self._id
         scene_name = getattr(self, "device_name", "Unknown")
-        
+
         LOGGER.info(
             "Activating scene: id=%s, name=%s, device_id=%s",
             scene_id,
             scene_name,
             self.device_id,
         )
-        
+
         try:
             # Scenarios are activated via PUT /scenarios/{id}
             await self._tydom_client.activate_scenario(scene_id)
@@ -734,12 +739,13 @@ class TydomMoment(TydomDevice):
         moment_data: dict,
     ):
         """Initialize a TydomMoment.
-        
+
         Args:
             tydom_client: Tydom client instance
             moment_id: Moment ID
             name: Moment name
             moment_data: Moment data dict from /moments/file
+
         """
         super().__init__(
             tydom_client=tydom_client,
@@ -772,25 +778,26 @@ class TydomMoment(TydomDevice):
 
     async def suspend_moment(self, suspend: bool, suspend_to: int = -1) -> None:
         """Suspend or resume a moment.
-        
+
         Args:
             suspend: True to suspend, False to resume
             suspend_to: Timestamp until which to suspend (-1 for indefinite)
-        
+
         Raises:
             TydomClientApiClientCommunicationError: If the request fails
+
         """
         # Calculer suspend_to : 0 pour reprendre, -1 ou timestamp pour suspendre
         if not suspend:
             suspend_to = 0
-        
+
         LOGGER.debug(
             "Suspending moment %s: suspend=%s, suspend_to=%s",
             self.moment_id,
             suspend,
             suspend_to,
         )
-        
+
         try:
             await self._tydom_client.suspend_moment(self.moment_id, suspend_to)
             # Mettre à jour l'état local après succès

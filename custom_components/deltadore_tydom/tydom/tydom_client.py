@@ -112,7 +112,7 @@ class TydomClient:
         self._message_handler = MessageHandler(
             tydom_client=self, cmd_prefix=self._cmd_prefix
         )
-        
+
         # Reconnection parameters with exponential backoff
         self._reconnect_attempts = 0
         self._max_reconnect_attempts = 10
@@ -120,7 +120,7 @@ class TydomClient:
         self._max_reconnect_delay = 60.0
         self._reconnect_backoff_factor = 2.0
         self.online = True
-        
+
         # Metadata cache with TTL (Time To Live)
         self._metadata_cache: dict[str, tuple[float, bool]] = {}  # endpoint -> (timestamp, is_valid)
         self._metadata_cache_ttl = 3600.0  # 1 hour in seconds
@@ -362,22 +362,23 @@ class TydomClient:
 
     async def _reconnect_with_backoff(self) -> None:
         """Reconnect with exponential backoff strategy.
-        
+
         This method implements an exponential backoff reconnection strategy
         to avoid overwhelming the server with reconnection attempts. The delay
         between attempts increases exponentially: delay = base_delay * (factor ^ attempt).
         The delay is capped at max_reconnect_delay to prevent excessive wait times.
-        
+
         The reconnection process:
         1. Calculate delay based on attempt number
         2. Wait for the calculated delay
         3. Attempt to connect and listen
         4. If successful, reset attempts counter and mark as online
         5. If failed, increment attempts and retry (up to max_attempts)
-        
+
         Raises:
             None: Exceptions are logged but do not propagate. The method
                   will stop after max_reconnect_attempts and mark client as offline.
+
         """
         while self._reconnect_attempts < self._max_reconnect_attempts:
             delay = min(
@@ -391,7 +392,7 @@ class TydomClient:
                 delay_seconds=delay
             )
             await asyncio.sleep(delay)
-            
+
             try:
                 self._connection = await self.async_connect()
                 await self.listen_tydom(self._connection)
@@ -411,7 +412,7 @@ class TydomClient:
                     max_attempts=self._max_reconnect_attempts,
                     error=str(e)
                 )
-        
+
         LOGGER.error("Impossible de se reconnecter après %d tentatives", self._max_reconnect_attempts)
         # Notifier Home Assistant de la perte de connexion
         self.online = False
@@ -493,11 +494,12 @@ class TydomClient:
 
     async def send_bytes(self, a_bytes: bytes, max_retries: int = 3, retry_delay: float = 1.0):
         """Send bytes to connection with intelligent retry mechanism.
-        
+
         Args:
             a_bytes: Bytes to send
             max_retries: Maximum number of retry attempts
             retry_delay: Initial delay between retries (exponential backoff)
+
         """
         if file_mode:
             return
@@ -556,7 +558,7 @@ class TydomClient:
                     exc_info=True,
                 )
                 raise
-        
+
         # If we get here, all retries failed
         if last_exception:
             raise TydomClientApiClientCommunicationError(
@@ -630,13 +632,14 @@ class TydomClient:
 
         Raises:
             TydomClientApiClientCommunicationError: If timeout or communication error occurs
+
         """
         event = asyncio.Event()
 
         transaction_id, request = self._message_handler.prepare_request(
             method, url, body, headers, reply_event=event
         )
-        
+
         try:
             await self.send_bytes(request)
         except Exception as e:
@@ -655,7 +658,7 @@ class TydomClient:
         try:
             async with async_timeout.timeout(timeout):
                 await event.wait()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             LOGGER.warning(
                 "Timeout waiting for reply to %s %s (transaction_id: %s, timeout: %.1fs)",
                 method,
@@ -733,7 +736,7 @@ class TydomClient:
 
     async def get_devices_meta(self, force_refresh: bool = False):
         """Get all devices metadata.
-        
+
         This method retrieves metadata for all devices from the Tydom API.
         The metadata includes information about device attributes such as:
         - Type (numeric, boolean, string, etc.)
@@ -741,12 +744,13 @@ class TydomClient:
         - Validity periods (for polling decisions)
         - Min/max/step values (for numeric attributes)
         - Enum values (for string attributes)
-        
+
         The results are cached for 1 hour (metadata_cache_ttl) to reduce
         API calls. Use force_refresh=True to bypass the cache.
-        
+
         Args:
             force_refresh: If True, force refresh even if cache is valid (default: False)
+
         """
         # Check cache if not forcing refresh
         if not force_refresh:
@@ -757,12 +761,12 @@ class TydomClient:
                 if current_time - timestamp < self._metadata_cache_ttl and is_valid:
                     LOGGER.debug("Using cached devices metadata (age: %.1fs)", current_time - timestamp)
                     return
-        
+
         # Cache expired or force refresh, fetch new metadata
         msg_type = "/devices/meta"
         req = "GET"
         await self.send_message(method=req, msg=msg_type)
-        
+
         # Update cache
         self._metadata_cache["devices_meta"] = (time.time(), True)
 
@@ -791,17 +795,18 @@ class TydomClient:
 
     async def get_devices_cmeta(self, force_refresh: bool = False):
         """Get metadata configuration to list poll devices (like Tywatt).
-        
+
         This method retrieves configuration metadata that identifies which
         devices require polling and at what intervals. This is particularly
         important for devices like Tywatt (energy monitoring) that don't send
         push updates and must be polled regularly.
-        
+
         The results are cached for 1 hour (metadata_cache_ttl) to reduce
         API calls. Use force_refresh=True to bypass the cache.
-        
+
         Args:
             force_refresh: If True, force refresh even if cache is valid (default: False)
+
         """
         # Check cache if not forcing refresh
         if not force_refresh:
@@ -812,32 +817,33 @@ class TydomClient:
                 if current_time - timestamp < self._metadata_cache_ttl and is_valid:
                     LOGGER.debug("Using cached devices cmeta (age: %.1fs)", current_time - timestamp)
                     return
-        
+
         # Cache expired or force refresh, fetch new metadata
         msg_type = "/devices/cmeta"
         req = "GET"
         await self.send_message(method=req, msg=msg_type)
-        
+
         # Update cache
         self._metadata_cache["devices_cmeta"] = (time.time(), True)
 
     def invalidate_metadata_cache(self, cache_key: str | None = None):
         """Invalidate metadata cache.
-        
+
         This method allows manual invalidation of the metadata cache. This is
         useful when you know that metadata has changed and you want to force
         a refresh on the next call to get_devices_meta() or get_devices_cmeta().
-        
+
         Args:
             cache_key: Specific cache key to invalidate (e.g., "devices_meta", "devices_cmeta").
                       If None, invalidates all caches.
-        
+
         Examples:
             # Invalidate all caches
             client.invalidate_metadata_cache()
-            
+
             # Invalidate only devices metadata cache
             client.invalidate_metadata_cache("devices_meta")
+
         """
         if cache_key is None:
             self._metadata_cache.clear()
@@ -899,20 +905,21 @@ class TydomClient:
 
     async def suspend_moment(self, moment_id: str | int, suspend_to: int = -1) -> None:
         """Suspend or resume a moment/program.
-        
+
         Args:
             moment_id: The moment/program ID
             suspend_to: Timestamp until which to suspend (-1 for indefinite, 0 to resume)
-        
+
         Raises:
             TydomClientApiClientCommunicationError: If the request fails
+
         """
         # Format du body JSON : {"suspend": {"to": suspend_to}}
         import json
-        
+
         suspend_data = {"suspend": {"to": suspend_to}}
         body = json.dumps(suspend_data)
-        
+
         path = f"/moments/{moment_id}"
         str_request = (
             f"PUT {path} HTTP/1.1\r\nContent-Length: "
@@ -922,14 +929,14 @@ class TydomClient:
             + "\r\n\r\n"
         )
         a_bytes = self._cmd_prefix + bytes(str_request, "ascii")
-        
+
         STRUCTURED_LOGGER.api_call(
             "debug", "PUT", path,
             moment_id=str(moment_id),
             suspend_to=suspend_to
         )
         LOGGER.debug("Sending suspend_moment request: moment_id=%s, suspend_to=%s", moment_id, suspend_to)
-        
+
         try:
             await self.send_bytes(a_bytes)
             LOGGER.debug("Suspend moment request sent successfully: moment_id=%s, suspend_to=%s", moment_id, suspend_to)
@@ -953,24 +960,25 @@ class TydomClient:
 
     async def activate_scenario(self, scenario_id: str | int):
         """Activate a scenario.
-        
+
         Args:
             scenario_id: The scenario ID to activate.
-            
+
         Raises:
             Exception: If the activation request fails.
+
         """
         # PUT /scenarios/{id}
         msg_type = f"/scenarios/{scenario_id}"
         req = "PUT"
-        
+
         LOGGER.debug(
             "Sending scenario activation request: method=%s, path=%s, scenario_id=%s",
             req,
             msg_type,
             scenario_id,
         )
-        
+
         try:
             await self.send_message(method=req, msg=msg_type)
             LOGGER.debug(
@@ -1025,16 +1033,17 @@ class TydomClient:
         max_retries: int = 2,
     ):
         """Give order (name + value) to endpoint with retry mechanism.
-        
+
         Args:
             device_id: Device ID
             endpoint_id: Endpoint ID
             name: Attribute name
             value: Attribute value
             max_retries: Maximum number of retry attempts (default: 2)
-        
+
         Raises:
             TydomClientApiClientCommunicationError: If all retry attempts fail
+
         """
         # For shutter, value is the percentage of closing
         body: str
@@ -1055,7 +1064,7 @@ class TydomClient:
             + "\r\n\r\n"
         )
         a_bytes = self._cmd_prefix + bytes(str_request, "ascii")
-        
+
         # Log the command (masking sensitive data)
         log_value = "***" if "pwd" in name.lower() or "password" in name.lower() else value
         LOGGER.debug(
@@ -1065,7 +1074,7 @@ class TydomClient:
             name,
             log_value,
         )
-        
+
         # Send with retry mechanism
         try:
             await self.send_bytes(a_bytes, max_retries=max_retries)
@@ -1095,20 +1104,20 @@ class TydomClient:
         max_retries: int = 2,
     ):
         """Give order (name + value) to endpoint with validation and retry mechanism.
-        
+
         This method validates the value against device metadata before sending
         the command. If validation fails, a ValueError is raised. This helps
         prevent sending invalid commands to devices.
-        
+
         Validation checks:
         - Type compatibility (numeric, boolean, string)
         - Min/max bounds for numeric values
         - Step alignment for numeric values
         - Enum values for string attributes
-        
+
         If device is None, validation is skipped and the method behaves like
         put_devices_data().
-        
+
         Args:
             device_id: Device ID
             endpoint_id: Endpoint ID
@@ -1116,13 +1125,14 @@ class TydomClient:
             value: Attribute value to validate and send
             device: Optional TydomDevice instance for validation (if None, validation is skipped)
             max_retries: Maximum number of retry attempts (default: 2)
-        
+
         Returns:
             0 on success
-        
+
         Raises:
             ValueError: If validation fails (with descriptive error message)
             TydomClientApiClientCommunicationError: If all retry attempts fail
+
         """
         # Validate value if device is provided
         if device is not None:
@@ -1138,7 +1148,7 @@ class TydomClient:
                     error_msg,
                 )
                 raise ValueError(error_msg or f"Valeur invalide pour {name}: {value}")
-        
+
         # If validation passed (or device not provided), send the command
         return await self.put_devices_data(
             device_id=device_id,
