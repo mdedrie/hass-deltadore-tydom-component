@@ -3647,6 +3647,8 @@ class HAScene(Scene, HAEntity):
             # Get zone (day/night)
             zone_key = self._get_zone_from_scene()
             
+            # For TWC scenes, always create a virtual device, even if zone is not determined
+            # If zone is not found, use a generic TWC device identifier
             if zone_key:
                 # Create virtual device identifier for this zone
                 device_identifier = f"tywell_control_{zone_key}"
@@ -3656,46 +3658,40 @@ class HAScene(Scene, HAEntity):
                 
                 # Try to find the physical Tywell Control device for this zone
                 tywell_device_id = self._find_tywell_device(zone_key)
-                
-                # Determine via_device: use physical Tywell Control if found, otherwise gateway
-                if tywell_device_id and gateway_device_id:
-                    # Verify the device exists in hub (it should be in device registry if it exists here)
-                    hub_instance = self._get_hub()
-                    if hub_instance and hasattr(hub_instance, "devices"):
-                        if tywell_device_id in hub_instance.devices:
-                            via_device_id = tywell_device_id
-                        else:
-                            via_device_id = gateway_device_id
+            else:
+                # TWC scene but zone not determined - create generic TWC device
+                device_identifier = "tywell_control"
+                device_name = self._get_translated_device_name("tywell_control", None)
+                # Try to find any Tywell Control device
+                tywell_device_id = self._find_tywell_device(None)
+            
+            # Determine via_device: use physical Tywell Control if found, otherwise gateway
+            if tywell_device_id and gateway_device_id:
+                # Verify the device exists in hub (it should be in device registry if it exists here)
+                hub_instance = self._get_hub()
+                if hub_instance and hasattr(hub_instance, "devices"):
+                    if tywell_device_id in hub_instance.devices:
+                        via_device_id = tywell_device_id
                     else:
                         via_device_id = gateway_device_id
                 else:
                     via_device_id = gateway_device_id
-                
-                # Create DeviceInfo for virtual device grouping TWC scenes by zone
-                info: DeviceInfo = {
-                    "identifiers": {(DOMAIN, device_identifier)},
-                    "name": device_name,
-                    "manufacturer": "Delta Dore",
-                    "model": "Tywell Control",
-                }
-                
-                # Link to physical device or gateway
-                if via_device_id:
-                    info["via_device"] = (DOMAIN, via_device_id)
-                
-                return info
             else:
-                # TWC scene but zone not determined - fallback to general scenes device
-                device_name = self._get_translated_device_name("tydom_scenes")
-                info: DeviceInfo = {
-                    "identifiers": {(DOMAIN, "tydom_scenes")},
-                    "name": device_name,
-                    "manufacturer": "Delta Dore",
-                    "model": "Tydom Scenes",
-                }
-                if gateway_device_id:
-                    info["via_device"] = (DOMAIN, gateway_device_id)
-                return info
+                via_device_id = gateway_device_id
+            
+            # Create DeviceInfo for virtual device grouping TWC scenes
+            info: DeviceInfo = {
+                "identifiers": {(DOMAIN, device_identifier)},
+                "name": device_name,
+                "manufacturer": "Delta Dore",
+                "model": "Tywell Control",
+            }
+            
+            # Link to physical device or gateway
+            if via_device_id:
+                info["via_device"] = (DOMAIN, via_device_id)
+            
+            return info
         else:
             # Non-TWC scene - group in "Scènes Tydom" virtual device
             device_name = self._get_translated_device_name("tydom_scenes")
