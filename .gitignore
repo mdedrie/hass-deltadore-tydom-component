@@ -16,3 +16,11 @@ coverage.xml
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
+
+# Development files
+endpoints_discovery_results.json
+dashboard_*.yaml
+tools/captures/
+tools/traces-*.txt
+tools/traces-*.log
+tools/traces.txt
