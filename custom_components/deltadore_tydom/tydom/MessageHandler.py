@@ -45,6 +45,7 @@ device_endpoint = {}
 device_type = {}
 device_metadata = {}
 scenario_metadata = {}  # Store scenario metadata from /configs/file
+groups_metadata = {}  # Store group metadata from /configs/file: {group_id: {"usage": "light", "name": "TOTAL"}}
 groups_data = {}  # Store groups data: {group_id: {"devices": [device_ids], "name": group_name}}
 
 
@@ -541,6 +542,23 @@ class MessageHandler:
                         scenario_metadata[scenario_id]["name"],
                     )
 
+        # Parse groups metadata from /configs/file
+        if "groups" in parsed and isinstance(parsed["groups"], list):
+            for group in parsed["groups"]:
+                if isinstance(group, dict) and "id" in group:
+                    group_id = group.get("id")
+                    group_id_str = str(group_id)
+                    groups_metadata[group_id_str] = {
+                        "usage": group.get("usage", ""),
+                        "name": group.get("name", f"Group {group_id}"),
+                    }
+                    LOGGER.debug(
+                        "Stored group metadata: id=%s, usage=%s, name=%s",
+                        group_id_str,
+                        groups_metadata[group_id_str]["usage"],
+                        groups_metadata[group_id_str]["name"],
+                    )
+
         LOGGER.debug("Configuration updated")
         return []
 
@@ -977,11 +995,40 @@ class MessageHandler:
                                                     if ep_id_str not in device_ids:
                                                         device_ids.append(ep_id_str)
                         
+                        # Get group metadata from /configs/file if available
+                        group_meta = groups_metadata.get(group_id_str, {})
+                        group_usage = group_meta.get("usage", "")
+                        config_name = group_meta.get("name", "")
+                        
+                        # Create descriptive name based on usage
+                        usage_names_fr = {
+                            "light": "Lumières",
+                            "shutter": "Volets",
+                            "awning": "Stores",
+                            "plug": "Prises",
+                            "heating": "Chauffage",
+                            "alarm": "Alarme",
+                        }
+                        
+                        if group_usage and group_usage in usage_names_fr:
+                            # Use descriptive French name based on usage
+                            group_name = f"Groupe {usage_names_fr[group_usage]}"
+                        elif config_name and config_name != f"Group {group_id}" and config_name != "TOTAL":
+                            # Use name from config if it's not the default or "TOTAL"
+                            group_name = config_name
+                        else:
+                            # Fallback: use usage if available, otherwise group ID
+                            if group_usage:
+                                # Try to capitalize usage as fallback
+                                group_name = f"Groupe {group_usage.capitalize()}"
+                            else:
+                                group_name = f"Groupe {group_id}"
+                        
                         # Store group data
-                        group_name = group.get("name", f"Group {group_id}")
                         groups_data[group_id_str] = {
                             "devices": device_ids,
                             "name": group_name,
+                            "usage": group_usage,
                         }
                         
                         # Create TydomGroup device
