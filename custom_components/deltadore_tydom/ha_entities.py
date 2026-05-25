@@ -580,23 +580,14 @@ class GenericSensor(SensorEntity):
 		Home Assistant (i.e., not disabled). Register callbacks and entity
 		references here, not in __init__.
 		"""
-		# Sensors should also register callbacks to HA when their state changes
+		# Sensors register callbacks to HA when their state changes.
+		# _ha_device is NOT set here: only the primary entity owns that reference.
 		self._device.register_callback(self.async_write_ha_state)
-		# Register entity reference (only if entity is actually added)
-		if self._device is not None:
-			self._device._ha_device = self
 
 	async def async_will_remove_from_hass(self):
 		"""Entity being removed from hass."""
 		# The opposite of async_added_to_hass. Remove any registered call backs here.
 		self._device.remove_callback(self.async_write_ha_state)
-		# Clear entity reference if it points to this entity
-		if (
-			self._device is not None
-			and hasattr(self._device, "_ha_device")
-			and self._device._ha_device is self
-		):
-			self._device._ha_device = None
 
 
 class BinarySensorBase(BinarySensorEntity):
@@ -695,23 +686,14 @@ class BinarySensorBase(BinarySensorEntity):
 		Home Assistant (i.e., not disabled). Register callbacks and entity
 		references here, not in __init__.
 		"""
-		# Sensors should also register callbacks to HA when their state changes
+		# Sensors register callbacks to HA when their state changes.
+		# _ha_device is NOT set here: only the primary entity owns that reference.
 		self._device.register_callback(self.async_write_ha_state)
-		# Register entity reference (only if entity is actually added)
-		if self._device is not None:
-			self._device._ha_device = self
 
 	async def async_will_remove_from_hass(self):
 		"""Entity being removed from hass."""
 		# The opposite of async_added_to_hass. Remove any registered call backs here.
 		self._device.remove_callback(self.async_write_ha_state)
-		# Clear entity reference if it points to this entity
-		if (
-			self._device is not None
-			and hasattr(self._device, "_ha_device")
-			and self._device._ha_device is self
-		):
-			self._device._ha_device = None
 
 
 class GenericBinarySensor(BinarySensorBase):
@@ -2876,26 +2858,21 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
 		"""Return the alarm state."""
 		# alarmMode :  "OFF", "ON", "TEST", "ZONE", "MAINTENANCE"
 		# alarmState: "OFF", "DELAYED", "ON", "QUIET"
-		if hasattr(self._device, "alarmMode"):
-			alarm_mode = getattr(self._device, "alarmMode", None)
-			if alarm_mode == "MAINTENANCE":
-				return AlarmControlPanelState.DISARMED
-
-			if alarm_mode == "OFF":
-				return AlarmControlPanelState.DISARMED
-			if alarm_mode == "ON":
-				alarm_state = getattr(self._device, "alarmState", None)
-				if alarm_state == "OFF":
-					return AlarmControlPanelState.ARMED_AWAY
-				else:
-					return AlarmControlPanelState.TRIGGERED
-			if alarm_mode in ("ZONE", "PART"):
-				alarm_state = getattr(self._device, "alarmState", None)
-				if alarm_state == "OFF":
-					return AlarmControlPanelState.ARMED_HOME
-				else:
-					return AlarmControlPanelState.TRIGGERED
-		return AlarmControlPanelState.TRIGGERED
+		alarm_mode = getattr(self._device, "alarmMode", None)
+		if alarm_mode == "MAINTENANCE" or alarm_mode == "OFF":
+			return AlarmControlPanelState.DISARMED
+		if alarm_mode == "ON":
+			alarm_state = getattr(self._device, "alarmState", None)
+			if alarm_state == "OFF":
+				return AlarmControlPanelState.ARMED_AWAY
+			return AlarmControlPanelState.TRIGGERED
+		if alarm_mode in ("ZONE", "PART"):
+			alarm_state = getattr(self._device, "alarmState", None)
+			if alarm_state == "OFF":
+				return AlarmControlPanelState.ARMED_HOME
+			return AlarmControlPanelState.TRIGGERED
+		# alarmMode inconnu ou pas encore reçu → état neutre
+		return AlarmControlPanelState.DISARMED
 
 	@property
 	def icon(self) -> str:
