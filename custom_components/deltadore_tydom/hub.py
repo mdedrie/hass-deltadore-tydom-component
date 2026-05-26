@@ -564,16 +564,21 @@ class Hub:
 			if isinstance(device, TydomScene) and isinstance(ha_device, HAScene):
 				await ha_device.async_device_update(device)
 
-			new_sensors = ha_device.get_sensors()
-			if len(new_sensors) > 0 and self.add_sensor_callback is not None:
-				# add new sensors
-				LOGGER.debug(
-					"Ajout de %d nouveau(x) capteur(s) pour le device %s: %s",
-					len(new_sensors),
-					device.device_id,
-					[s._attr_name for s in new_sensors],
-				)
-				self.add_sensor_callback(new_sensors)
+			# Only scan for new sensors if the device has gained new public attributes
+			current_attr_count = sum(
+				1 for k in stored_device.__dict__ if not k.startswith("_")
+			)
+			if current_attr_count > getattr(ha_device, "_last_device_attr_count", 0):
+				ha_device._last_device_attr_count = current_attr_count
+				new_sensors = ha_device.get_sensors()
+				if new_sensors and self.add_sensor_callback is not None:
+					LOGGER.debug(
+						"Ajout de %d nouveau(x) capteur(s) pour le device %s: %s",
+						len(new_sensors),
+						device.device_id,
+						[s._attr_name for s in new_sensors],
+					)
+					self.add_sensor_callback(new_sensors)
 			# ha_device.publish_updates()
 			# ha_device.update()
 		except KeyError as e:
@@ -645,34 +650,6 @@ class Hub:
 		# Update cache atomically
 		self._polling_cache = new_cache
 		LOGGER.debug("Polling cache rebuilt with %d entries", len(self._polling_cache))
-
-	def _rebuild_polling_cache(self) -> None:
-		"""Rebuild polling cache efficiently.
-
-		This method scans all devices and their metadata to build a cache
-		mapping (device_id, attribute_name) to polling intervals based on
-		the validity metadata. The cache is rebuilt periodically to account
-		for metadata changes.
-
-		The cache structure: {(device_id, attr_name): interval_seconds}
-		- Devices with validity=INFINITE or upToDate are not cached (no polling)
-		- Devices with validity=ES_SUPERVISION are cached with 300s interval
-		- Devices with validity=SENSOR_SUPERVISION are cached with 60s interval
-		- Devices with validity=SYNCHRO_SUPERVISION are cached with 30s interval
-		"""
-		new_cache: dict[tuple[str, str], int] = {}
-		for device_id, device in self.devices.items():
-			if not hasattr(device, "_metadata") or device._metadata is None:
-				continue
-			for attr_name, attr_metadata in device._metadata.items():
-				if isinstance(attr_metadata, dict):
-					validity = attr_metadata.get("validity")
-					interval = get_polling_interval_for_validity(validity)
-					if interval is not None:
-						new_cache[(device_id, attr_name)] = interval
-
-		# Update cache atomically
-		self._polling_cache = new_cache
 
 	async def refresh_data(self) -> None:
 		"""Periodically refresh data for devices which don't do push.

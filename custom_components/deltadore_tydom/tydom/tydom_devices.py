@@ -46,17 +46,8 @@ class TydomDevice:
 		self._metadata = metadata
 		self._callbacks: set[DeviceCallback] = set()
 		if data is not None:
-			for key in data:
-				if isinstance(data[key], dict):
-					LOGGER.debug("type of %s : %s", key, type(data[key]))
-					LOGGER.debug("%s => %s", key, data[key])
-					setattr(self, key, data[key])
-				elif isinstance(data[key], list):
-					LOGGER.debug("type of %s : %s", key, type(data[key]))
-					LOGGER.debug("%s => %s", key, data[key])
-					setattr(self, key, data[key])
-				else:
-					setattr(self, key, data[key])
+			for key, value in data.items():
+				setattr(self, key, value)
 
 	def register_callback(self, callback: DeviceCallback) -> None:
 		"""Register callback, called when state changes."""
@@ -102,11 +93,6 @@ class TydomDevice:
 				]:
 					setattr(self, attribute, value)
 		await self.publish_updates()
-		if hasattr(self, "_ha_device") and self._ha_device is not None:
-			try:
-				self._ha_device.async_write_ha_state()
-			except Exception:
-				LOGGER.exception("update failed")
 
 	async def publish_updates(self) -> None:
 		"""Schedule call all registered callbacks."""

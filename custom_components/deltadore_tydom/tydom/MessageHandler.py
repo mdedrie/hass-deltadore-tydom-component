@@ -329,9 +329,8 @@ class MessageHandler:
 				if "link" in endpoint and endpoint["link"].get("type") == "area":
 					area_id = endpoint["link"]["id"]
 					area_to_devices.setdefault(area_id, [])
-					if device_unique_id not in [
-						d["unique_id"] for d in area_to_devices[area_id]
-					]:
+					existing_ids = {d["unique_id"] for d in area_to_devices[area_id]}
+					if device_unique_id not in existing_ids:
 						area_to_devices[area_id].append(
 							{
 								"unique_id": device_unique_id,
