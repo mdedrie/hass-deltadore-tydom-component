@@ -2153,26 +2153,38 @@ class HaClimate(ClimateEntity, HAEntity):
 		return UnitOfTemperature.CELSIUS
 
 	@property
+	def hvac_modes(self) -> list[HVACMode]:
+		"""Return the list of available HVAC modes.
+
+		For area-linked devices (Thermacome/Tywell Pro), COOL and HEAT are added
+		dynamically once the device receives its first authorization value via
+		/areas/data messages.
+		"""
+		modes = list(self._attr_hvac_modes)
+		if hasattr(self._device, "authorization"):
+			if HVACMode.COOL not in modes:
+				modes.append(HVACMode.COOL)
+			if HVACMode.HEAT not in modes:
+				modes.append(HVACMode.HEAT)
+		return modes
+
+	@property
 	def hvac_mode(self) -> HVACMode:
 		"""Return the current operation (e.g. heat, cool, idle)."""
+		# authorization (from /areas/data) takes priority for area-linked devices
+		if hasattr(self._device, "authorization"):
+			authorization = getattr(self._device, "authorization", None)
+			if authorization is not None and authorization in self.dict_modes_dd_to_ha:
+				LOGGER.debug(
+					"authorization = %s",
+					self.dict_modes_dd_to_ha[authorization],
+				)
+				return self.dict_modes_dd_to_ha[authorization]
 		if hasattr(self._device, "hvacMode"):
 			hvac_mode = getattr(self._device, "hvacMode", None)
 			if hvac_mode is not None and hvac_mode in self.dict_modes_dd_to_ha:
 				LOGGER.debug("hvac_mode = %s", self.dict_modes_dd_to_ha[hvac_mode])
 				return self.dict_modes_dd_to_ha[hvac_mode]
-		if hasattr(self._device, "authorization"):
-			authorization = getattr(self._device, "authorization", None)
-			if authorization is not None and authorization in self.dict_modes_dd_to_ha:
-				thermic_level = getattr(self._device, "thermicLevel", None)
-				if (
-					thermic_level is not None
-					and thermic_level in self.dict_modes_dd_to_ha
-				):
-					LOGGER.debug(
-						"authorization = %s",
-						self.dict_modes_dd_to_ha[thermic_level],
-					)
-					return self.dict_modes_dd_to_ha[thermic_level]
 		if hasattr(self._device, "thermicLevel"):
 			thermic_level = getattr(self._device, "thermicLevel", None)
 			if thermic_level is not None and thermic_level in self.dict_modes_dd_to_ha:
@@ -2812,6 +2824,7 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
 	"""Representation of an Alarm."""
 
 	_attr_should_poll = False
+	_attr_force_update = True
 	_attr_supported_features = AlarmControlPanelEntityFeature(0)
 	_attr_icon = "mdi:shield-home"
 	_attr_has_entity_name = True
@@ -2868,9 +2881,33 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
 			return AlarmControlPanelState.TRIGGERED
 		if alarm_mode in ("ZONE", "PART"):
 			alarm_state = getattr(self._device, "alarmState", None)
-			if alarm_state == "OFF":
+			if alarm_state != "OFF":
+				return AlarmControlPanelState.TRIGGERED
+			# Distinguer ARMED_AWAY / ARMED_HOME / ARMED_NIGHT selon les zones actives
+			# vs les zones configurées (chaque mode peut utiliser zoneCmd)
+			client = self._device._tydom_client
+			active_zones = {
+				i
+				for i in range(1, 9)
+				if getattr(self._device, f"zone{i}State", None) == "ON"
+			}
+
+			def _parse_zone_cfg(cfg: str | None) -> set[int]:
+				if not cfg:
+					return set()
+				return {int(z.strip()) for z in cfg.split(",") if z.strip().isdigit()}
+
+			night_zones = _parse_zone_cfg(getattr(client, "_zone_night", None))
+			home_zones = _parse_zone_cfg(getattr(client, "_zone_home", None))
+			away_zones = _parse_zone_cfg(getattr(client, "_zone_away", None))
+
+			if active_zones and active_zones == night_zones:
+				return AlarmControlPanelState.ARMED_NIGHT
+			if active_zones and active_zones == home_zones:
 				return AlarmControlPanelState.ARMED_HOME
-			return AlarmControlPanelState.TRIGGERED
+			if active_zones and active_zones == away_zones:
+				return AlarmControlPanelState.ARMED_AWAY
+			return AlarmControlPanelState.ARMED_HOME
 		# alarmMode inconnu ou pas encore reçu → état neutre
 		return AlarmControlPanelState.DISARMED
 
@@ -2907,22 +2944,48 @@ class HaAlarm(AlarmControlPanelEntity, HAEntity):
 	async def async_alarm_disarm(self, code=None) -> None:
 		"""Send disarm command."""
 		await self._device.alarm_disarm(code)
+		self._schedule_state_refresh()
 
 	async def async_alarm_arm_away(self, code=None) -> None:
 		"""Send arm away command."""
 		await self._device.alarm_arm_away(code)
+		self._schedule_state_refresh()
 
 	async def async_alarm_arm_home(self, code=None) -> None:
 		"""Send arm home command."""
 		await self._device.alarm_arm_home(code)
+		self._schedule_state_refresh()
 
 	async def async_alarm_arm_night(self, code=None) -> None:
 		"""Send arm night command."""
 		await self._device.alarm_arm_night(code)
+		self._schedule_state_refresh()
 
 	async def async_alarm_trigger(self, code=None) -> None:
 		"""Send alarm trigger command."""
 		await self._device.alarm_trigger(code)
+		self._schedule_state_refresh()
+
+	def _schedule_state_refresh(self, delay: float = 3.0) -> None:
+		"""Schedule a Tydom state refresh after a command.
+
+		Ensures the HA control reverts to the real device state if the
+		command was silently rejected (door open, mode transition, etc.).
+		get_devices_data() demande l'état réel à Tydom ; on attend 1 s
+		que la réponse soit traitée avant de forcer la mise à jour du frontend.
+		"""
+
+		async def _refresh() -> None:
+			await asyncio.sleep(delay)
+			await self._device._tydom_client.get_devices_data()
+			# Laisser le temps à Tydom de répondre et au MessageHandler de
+			# mettre à jour les attributs du device avant de forcer le push.
+			await asyncio.sleep(1.0)
+			# _attr_force_update=True garantit que STATE_CHANGED est toujours
+			# émis même si l'état calculé n'a pas changé.
+			self.async_write_ha_state()
+
+		self.hass.async_create_task(_refresh())
 
 	async def async_acknowledge_events(self, code=None) -> None:
 		"""Acknowledge alarm events."""
